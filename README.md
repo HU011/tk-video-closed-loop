@@ -25,6 +25,57 @@
 - `services/replicator.py`：复刻模块，负责 60 秒限制、15 秒切片、提示词生成、Seedance 调用、尾帧衔接和视频拼接。
 - `static/`：本地 Web 页面，提供采集、视频库、样品达人、复刻任务和导入界面。
 
+## 项目结构
+
+```text
+tk-video-closed-loop/
+├─ app.py                         # HTTP 服务、API 路由、静态页面入口
+├─ README.md                      # 中文使用说明
+├─ requirements.txt               # Python 依赖说明
+├─ .env.example                   # 环境变量配置样例
+├─ config.example.json            # JSON 配置样例
+├─ start.bat                      # Windows 启动脚本
+├─ start.ps1                      # PowerShell 启动脚本
+├─ agent.md                       # 本地开发边界规则
+├─ core/                          # 配置、路径边界、SQLite 数据库
+│  ├─ db.py                       # 表结构、连接、通用 upsert
+│  ├─ paths.py                    # 项目目录约束和路径工具
+│  └─ settings.py                 # .env/config.json 配置加载
+├─ collection/                    # 采集模块
+│  ├─ collector.py                # URL/CSV/JSON 采集入口
+│  └─ tiktok_oembed.py            # TikTok oEmbed 元数据采集
+├─ downloading/                   # 视频下载模块
+│  └─ video_downloader.py         # 直链下载和可选 yt-dlp 下载
+├─ screening/                     # 筛选模块
+│  └─ screener.py                 # 爆款视频和样品风险输出
+├─ pipeline/                      # 闭环编排
+│  └─ closed_loop.py              # 采集后立即筛选
+├─ services/                      # 业务服务
+│  ├─ analyzer.py                 # 热度评分和样品风险评分
+│  ├─ importer.py                 # CSV/JSON 行导入
+│  └─ replicator.py               # 分段复刻任务编排
+├─ integrations/                  # 第三方模型/API 适配
+│  ├─ apimart_client.py           # APIMart 请求、上传、下载
+│  ├─ gemini_client.py            # Gemini 提示词生成
+│  └─ seedance_client.py          # Seedance 2.0 视频生成和尾帧
+├─ media/                         # 媒体处理
+│  └─ ffmpeg_tools.py             # 切片、探测、抽帧、拼接
+├─ static/                        # Web 前端
+│  ├─ index.html                  # 页面结构
+│  ├─ app.js                      # 前端交互和 API 调用
+│  └─ styles.css                  # 页面样式
+├─ scripts/                       # 辅助脚本
+│  ├─ check_setup.py              # 环境检查
+│  ├─ run_checks.ps1              # 编译、测试、基础检查
+│  ├─ package_upload.ps1          # 上传打包
+│  └─ seed_demo.py                # 示例数据脚本
+├─ tests/                         # 单元测试
+├─ examples/                      # 示例 CSV 数据
+├─ data/                          # 本地数据库目录，默认不提交真实数据
+├─ uploads/                       # 上传素材目录，默认不提交真实素材
+└─ outputs/                       # 生成结果目录，默认不提交生成视频
+```
+
 ## 快速开始
 
 ### 1. 克隆项目
