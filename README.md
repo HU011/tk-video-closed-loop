@@ -119,7 +119,7 @@ Python 侧运行时只使用标准库，`requirements.txt` 用于说明外部工
 Copy-Item .env.example .env
 ```
 
-本地数据导入、筛选和页面查看不需要真实 API Key。真实复刻生成需要配置 APIMart 和公网素材访问地址；TK 后台自动化采集需要先用独立 Chrome 正常登录 TK 后台。
+本地数据导入、筛选和页面查看不需要真实 API Key。复刻生成需要配置 APIMart 和公网素材访问地址；TK 后台自动化采集需要先用独立 Chrome 正常登录 TK 后台。
 
 ### 4. 检查环境
 
@@ -127,7 +127,7 @@ Copy-Item .env.example .env
 .\venv\Scripts\python.exe scripts\check_setup.py --mode basic
 ```
 
-真实复刻前运行：
+复刻前运行：
 
 ```powershell
 .\venv\Scripts\python.exe scripts\check_setup.py --mode real
@@ -163,7 +163,7 @@ APP_PORT=8765
 DATABASE_PATH=data/app.db
 ```
 
-### 真实复刻生成
+### 复刻生成
 
 ```env
 APIMART_API_KEY=你的_APIMart_Key
@@ -223,6 +223,8 @@ YTDLP_BIN=yt-dlp
 .\venv\Scripts\python.exe scripts\tk_collect_completed_videos.py listen-network --request-url-contains video --timeout 120
 ```
 
+监听时需要在 TK 后台页面里手动打开已完成视频列表、切换筛选条件或翻页。目标请求一般满足这些特征：返回 `200`、响应是 JSON、response 里能看到视频链接或视频 ID、达人/商品/播放/订单等字段，并且分页时同一个接口会重复出现。
+
 确认接口后，再主动请求后台 API 并导入数据库：
 
 ```powershell
@@ -233,7 +235,7 @@ YTDLP_BIN=yt-dlp
 
 更多说明见 `docs/tk_automation.md`。
 
-TK 后台采集不会把 Cookie 写入仓库，也不会内置任何私有接口。监听输出会脱敏 `cookie`、`authorization`、`x-csrf-token` 等敏感请求头。
+TK 后台采集不会要求在项目里输入 TK 账号密码，也不会把 Cookie 写入仓库。你在独立 Chrome 里正常登录后，主动请求会由浏览器自动携带 Cookie/session、User-Agent、Origin、Referer 等浏览器环境信息；接口路径、请求方法、业务参数、分页字段和必要的自定义请求头需要通过监听请求确认后配置。监听输出会脱敏 `cookie`、`authorization`、`x-csrf-token` 等敏感请求头。
 
 ## CSV 字段
 
@@ -322,5 +324,5 @@ outputs/replication_job_xxxxx/final_replicated_video.mp4
 
 - 不要把真实 API Key、Cookie、账号密码或业务数据提交到仓库。
 - 项目不内置真实 Cookie、账号密码或私有接口地址；独立 TK 采集模块使用你正常登录后的 Chrome 会话请求后台接口。
-- 真实复刻生成依赖 APIMart、FFmpeg 和公网素材访问地址。
+- 复刻生成依赖 APIMart、FFmpeg 和公网素材访问地址。
 - Seedance 2.0 单次生成最长 15 秒，因此长视频会按 15 秒分段生成后拼接。

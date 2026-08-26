@@ -92,6 +92,17 @@ runtime/chrome_profile
 
 `headers` 会默认脱敏 `cookie`、`authorization`、`x-csrf-token` 等敏感字段。监听模式的用途是确认真实接口、请求方法、分页字段、请求体和返回结构。
 
+### 怎么确认目标接口
+
+监听时不要随便拿第一个请求当采集接口，按下面标准判断：
+
+1. 在 TK 后台页面里触发列表加载，例如进入已完成视频列表、切换筛选条件、点击下一页。
+2. 找到重复出现的列表接口，通常是 `GET` 或 `POST`，状态码为 `200`，响应类型为 JSON。
+3. 确认 response 里有视频相关字段，例如 TikTok 视频链接、视频 ID、达人账号、商品、播放、点赞、评论、订单、GMV、发布时间、发布状态。
+4. 翻页时确认同一个接口的 `page/page_size`、`offset/limit` 或 `cursor/next_cursor` 参数会变化。
+5. 继续翻到最后，确认结束条件是空列表、`has_more=false`、`has_next=false`、没有 `next_cursor`，或下一页游标不再变化。
+6. 把确认后的 `url`、`method`、必要 `headers`、`query`、`post_data`、分页参数、返回字段记录到本地 `.env` 或命令行参数。
+
 需要重点确认这些内容：
 
 - `url`：已完成视频列表接口地址。
@@ -151,6 +162,25 @@ POST 接口示例：
 ```
 
 主动请求会在 TK 后台页面上下文中执行 `fetch`，因此会复用当前 Chrome 的登录态，不需要把 Cookie 写到 `.env`。
+
+### 哪些会自动补全
+
+主动请求运行在已登录 TK 后台页面里，所以浏览器会自动补全这些环境信息：
+
+- `Cookie/session`：由 `credentials: "include"` 自动携带。
+- `User-Agent`、`sec-ch-ua` 等浏览器指纹请求头：由 Chrome 自己发送。
+- `Origin`、`Referer`：同源或跨源请求时由浏览器按规则生成。
+- 禁止脚本手动设置的请求头，例如 `cookie`、`user-agent`：不需要也不能写进配置。
+
+这些不会自动知道，需要你通过监听请求确认后配置：
+
+- 接口路径或完整 URL。
+- 请求方法：GET 或 POST。
+- 业务筛选参数：达人、商品、任务状态、发布时间、视频状态等。
+- 分页参数：`page/page_size`、`offset/limit`、`cursor/next_cursor`、`has_more`。
+- 必要的自定义请求头，例如 `x-csrf-token`、业务网关 token、特殊 `content-type`。这类值如果会过期，只能放本地 `.env`，不要提交到仓库。
+
+TK 账号密码不需要输入到项目里。你只需要在独立 Chrome 中正常登录；邮箱配置只用于可选读取验证码，不是保存 TK 账号密码。
 
 如果接口使用游标分页：
 
