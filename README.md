@@ -1,27 +1,28 @@
 # TikTok 达人带货视频采集、爆款筛选与复刻生成
 
-这是一个面向 TikTok 达人带货视频的本地化工作台，用于把视频数据采集、爆款筛选、样品风险判断和复刻生成串成一套可配置流程。
+这是一个面向 TikTok 达人带货视频的本地化工作台，用于把 TK 后台视频链接采集、视频数据入库、爆款筛选、样品风险判断和复刻生成串成一套可配置流程。
 
-项目默认使用本地 SQLite 存储数据，不内置账号 Cookie、历史业务数据或真实密钥。下载后按文档配置 `ffmpeg/ffprobe`、APIMart Key 和可选 `yt-dlp`，即可在本地完成基础使用。
+项目默认使用本地 SQLite 存储数据，不内置账号 Cookie、历史业务数据或真实密钥。TK 后台采集通过已登录 Chrome 会话完成，真实接口需要先监听 Network 确认；复刻生成需要配置 `ffmpeg/ffprobe`、APIMart Key 和公网素材访问地址。
 
 ## 核心流程
 
-1. 采集 TikTok 视频链接、CSV 或 JSON 数据。
-2. 下载或上传原始视频素材。
-3. 入库账号、达人、产品和视频指标。
-4. 自动计算爆款视频评分。
-5. 自动筛选样品风险达人。
-6. 在页面选择视频并上传产品图。
-7. 调用 Gemini 生成分段复刻提示词。
-8. 调用 Seedance 2.0 分段生成视频并返回尾帧。
-9. 使用尾帧衔接下一段，最后拼接成片。
+1. 使用独立 TK 模块登录后台并读取验证码。
+2. 监听 TK 后台真实 Network 请求，确认已完成视频列表接口。
+3. 复用已登录 Chrome 页面主动请求后台 API，分页采集已完成视频链接。
+4. 将视频、达人、产品和指标数据导入本地 SQLite。
+5. 下载或上传原始视频素材。
+6. 自动计算爆款视频评分和样品风险达人。
+7. 在页面选择视频并上传产品图。
+8. 调用 Gemini 生成分段复刻提示词。
+9. 调用 Seedance 2.0 分段生成视频，使用尾帧衔接并拼接成片。
 
 ## 功能模块
 
-- `collection/`：采集模块，支持 TikTok oEmbed、URL 列表、CSV、JSON 和手动数据行。
+- `collection/`：本地工作台数据入口，支持 TikTok oEmbed、URL 列表、CSV、JSON 和手动数据行。
 - `downloading/`：下载模块，支持 MP4 直链下载；配置 `yt-dlp` 后可下载 TikTok 页面链接。
 - `screening/`：筛选模块，计算爆款视频和样品风险达人。
 - `pipeline/`：流程编排模块，提供采集后立即筛选的入口。
+- `tk_automation/`：独立 TK 后台自动化采集模块，提供监听请求和主动请求两种方式，不集成到 Web 页面。
 - `services/replicator.py`：复刻模块，负责 60 秒限制、15 秒切片、提示词生成、Seedance 调用、尾帧衔接和视频拼接。
 - `static/`：本地 Web 页面，提供采集、视频库、样品达人、复刻任务和导入界面。
 
@@ -50,6 +51,18 @@ tk-video-closed-loop/
 │  └─ screener.py                 # 爆款视频和样品风险输出
 ├─ pipeline/                      # 闭环编排
 │  └─ closed_loop.py              # 采集后立即筛选
+├─ tk_automation/                 # 独立 TK 后台自动化采集
+│  ├─ auth/
+│  │  └─ email_code.py            # IMAP 邮箱验证码读取
+│  ├─ browser/
+│  │  ├─ chrome_launcher.py       # 独立 Chrome 登录配置和启动命令
+│  │  └─ cdp_client.py            # Chrome DevTools Protocol 连接
+│  ├─ collectors/
+│  │  ├─ network_monitor.py       # 监听 TK 后台真实 Network 请求
+│  │  ├─ backend_api.py           # 已登录页面上下文主动请求 TK 后台 API
+│  │  └─ completed_video_links.py # 视频链接解析、完成状态过滤和入库
+│  └─ parsers/
+│     └─ video_links.py           # TikTok 链接解析
 ├─ services/                      # 业务服务
 │  ├─ analyzer.py                 # 热度评分和样品风险评分
 │  ├─ importer.py                 # CSV/JSON 行导入
@@ -68,9 +81,15 @@ tk-video-closed-loop/
 │  ├─ check_setup.py              # 环境检查
 │  ├─ run_checks.ps1              # 编译、测试、基础检查
 │  ├─ package_upload.ps1          # 上传打包
+│  ├─ tk_collect_completed_videos.py # TK 后台监听请求和主动请求采集命令
 │  └─ seed_demo.py                # 示例数据脚本
+├─ docs/                          # 详细文档
+│  ├─ architecture.md             # 架构说明
+│  ├─ tk_automation.md            # TK 后台自动化采集说明
+│  └─ upload.md                   # 上传和发布说明
 ├─ tests/                         # 单元测试
 ├─ examples/                      # 示例 CSV 数据
+├─ runtime/                       # 登录会话和运行缓存目录，默认不提交真实数据
 ├─ data/                          # 本地数据库目录，默认不提交真实数据
 ├─ uploads/                       # 上传素材目录，默认不提交真实素材
 └─ outputs/                       # 生成结果目录，默认不提交生成视频
@@ -92,7 +111,7 @@ python -m venv venv
 .\venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-Python 侧运行时只使用标准库，`requirements.txt` 用于说明外部工具依赖。
+Python 侧运行时只使用标准库，`requirements.txt` 用于说明外部工具依赖。真实视频复刻依赖本机可用的 `ffmpeg/ffprobe`，TikTok 页面视频下载可选依赖 `yt-dlp`。
 
 ### 3. 创建本地配置
 
@@ -100,7 +119,7 @@ Python 侧运行时只使用标准库，`requirements.txt` 用于说明外部工
 Copy-Item .env.example .env
 ```
 
-基础采集和筛选不需要真实 API Key。真实复刻生成需要配置 APIMart 和公网素材访问地址。
+本地数据导入、筛选和页面查看不需要真实 API Key。真实复刻生成需要配置 APIMart 和公网素材访问地址；TK 后台自动化采集需要先用独立 Chrome 正常登录 TK 后台。
 
 ### 4. 检查环境
 
@@ -182,6 +201,40 @@ YTDLP_BIN=yt-dlp
 6. 点击“开始复刻”。
 7. 在“复刻任务”查看分段提示词、生成片段、尾帧和最终成片。
 
+## 独立 TK 后台采集
+
+该部分不集成到 Web 页面，放在 `tk_automation/` 和 `scripts/tk_collect_completed_videos.py` 中。TK 后台采集只有两种获取方式：监听真实 Network 请求，或复用已登录 Chrome 页面主动请求后台 API。不会把 CSV 当作 TK 后台采集主流程。
+
+读取或等待登录验证码：
+
+```powershell
+.\venv\Scripts\python.exe scripts\tk_collect_completed_videos.py wait-email-code --timeout 180
+```
+
+生成独立 Chrome 登录命令：
+
+```powershell
+.\venv\Scripts\python.exe scripts\tk_collect_completed_videos.py chrome-command
+```
+
+登录 TK 后台后，先监听真实请求，确认已完成视频列表接口的 `url`、`method`、`headers`、`body` 和分页字段：
+
+```powershell
+.\venv\Scripts\python.exe scripts\tk_collect_completed_videos.py listen-network --request-url-contains video --timeout 120
+```
+
+确认接口后，再主动请求后台 API 并导入数据库：
+
+```powershell
+.\venv\Scripts\python.exe scripts\tk_collect_completed_videos.py collect-api --api-url "/your/completed/video/list/api" --account shop_account_a --max-pages 10 --import-db
+```
+
+主动请求支持 `page/page_size` 翻页，也支持 `cursor/next_cursor/has_more` 这类游标分页。
+
+更多说明见 `docs/tk_automation.md`。
+
+TK 后台采集不会把 Cookie 写入仓库，也不会内置任何私有接口。监听输出会脱敏 `cookie`、`authorization`、`x-csrf-token` 等敏感请求头。
+
 ## CSV 字段
 
 最小字段：
@@ -254,6 +307,7 @@ outputs/replication_job_xxxxx/final_replicated_video.mp4
 - `data/` 中的本地数据库
 - `uploads/` 中的真实素材
 - `outputs/` 中的生成结果
+- `runtime/` 中的登录会话和运行缓存
 - `__pycache__/`
 - `*.pyc`
 - `*.zip`
@@ -267,6 +321,6 @@ outputs/replication_job_xxxxx/final_replicated_video.mp4
 ## 注意事项
 
 - 不要把真实 API Key、Cookie、账号密码或业务数据提交到仓库。
-- 本项目不内置 TikTok 登录态采集器；当前采集入口面向 URL、CSV、JSON 和可选 `yt-dlp` 下载。
+- 项目不内置真实 Cookie、账号密码或私有接口地址；独立 TK 采集模块使用你正常登录后的 Chrome 会话请求后台接口。
 - 真实复刻生成依赖 APIMart、FFmpeg 和公网素材访问地址。
 - Seedance 2.0 单次生成最长 15 秒，因此长视频会按 15 秒分段生成后拼接。
