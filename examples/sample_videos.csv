@@ -1,0 +1,4 @@
+account_name,username,title,video_url,views,likes,comments,shares,orders,gmv,duration_seconds,product_name,sample_received_count,posted_video_count,follower_count
+shop_account_a,creator_hot_01,Kitchen organizer demo,https://example.com/demo-video-01.mp4,280000,18600,940,3100,360,9200,24,Foldable organizer,1,2,87000
+shop_account_b,sample_risk_09,Sample request without delivery,https://example.com/demo-video-02.mp4,1200,38,2,1,0,0,18,Portable fill light,6,1,58000
+

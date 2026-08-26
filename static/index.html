@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TK 带货视频闭环</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <aside class="side">
+      <div class="brand">
+        <span class="brand-mark">TK</span>
+        <span>带货视频闭环</span>
+      </div>
+      <button class="nav active" data-view="overview">总览</button>
+      <button class="nav" data-view="collect">采集</button>
+      <button class="nav" data-view="videos">视频库</button>
+      <button class="nav" data-view="samples">样品达人</button>
+      <button class="nav" data-view="jobs">复刻任务</button>
+      <button class="nav" data-view="import">导入</button>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1 id="viewTitle">总览</h1>
+          <p id="subTitle">多账号采集、爆款分析、样品风险和分段复刻。</p>
+        </div>
+        <div class="actions">
+          <button id="refreshBtn" class="icon-btn" title="刷新">↻</button>
+          <button id="analyzeBtn" class="primary">分析评分</button>
+        </div>
+      </header>
+
+      <section id="overviewView" class="view active">
+        <div id="metrics" class="metrics"></div>
+        <div id="systemStatus" class="status-strip"></div>
+        <div class="grid two">
+          <section class="panel">
+            <div class="panel-head">
+              <h2>爆款视频</h2>
+              <button class="link-btn" data-goto="videos">查看全部</button>
+            </div>
+            <div id="hotList" class="list"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head">
+              <h2>白嫖样品达人</h2>
+              <button class="link-btn" data-goto="samples">查看全部</button>
+            </div>
+            <div id="candidateList" class="list"></div>
+          </section>
+        </div>
+        <section class="panel">
+          <div class="panel-head">
+            <h2>最近复刻</h2>
+            <button class="link-btn" data-goto="jobs">查看任务</button>
+          </div>
+          <div id="recentJobs" class="jobs"></div>
+        </section>
+      </section>
+
+      <section id="collectView" class="view">
+        <div class="grid two">
+          <section class="panel">
+            <h2>采集任务</h2>
+            <label>采集账号</label>
+            <input id="collectAccountName" placeholder="shop_account_a" />
+            <label class="check">
+              <input id="collectDownload" type="checkbox" />
+              <span>采集后尝试下载视频</span>
+            </label>
+            <label>TikTok 视频链接，一行一个</label>
+            <textarea id="collectUrlText" spellcheck="false" placeholder="https://www.tiktok.com/@creator/video/123..."></textarea>
+            <button id="collectBtn" class="primary wide">采集并筛选</button>
+            <div id="collectStatus" class="status"></div>
+          </section>
+          <section class="panel">
+            <h2>结构化采集</h2>
+            <textarea id="collectCsvText" spellcheck="false" placeholder="account_name,username,title,video_url,views,likes,comments,shares,orders,gmv,duration_seconds,product_name,sample_received_count,posted_video_count"></textarea>
+            <button id="collectCsvBtn" class="primary wide">导入并筛选</button>
+            <div id="moduleStatus" class="list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="videosView" class="view">
+        <div class="toolbar">
+          <button id="reloadVideos" class="secondary">刷新视频</button>
+          <select id="videoFilter">
+            <option value="all">全部视频</option>
+            <option value="hot">只看爆款</option>
+          </select>
+        </div>
+        <div class="layout">
+          <div id="videoGrid" class="video-grid"></div>
+          <aside id="replicatePanel" class="panel sticky">
+            <h2>复刻</h2>
+            <div id="selectedVideo" class="muted">选择一个视频</div>
+            <label>产品图</label>
+            <input id="productImageInput" type="file" accept="image/*" />
+            <input id="productImagePath" placeholder="uploads/product/xxx.png" />
+            <label>最长时长</label>
+            <select id="maxDuration">
+              <option value="30">30 秒</option>
+              <option value="45">45 秒</option>
+              <option value="60">60 秒</option>
+              <option value="15">15 秒</option>
+            </select>
+            <button id="replicateBtn" class="primary wide">开始复刻</button>
+            <div id="replicateStatus" class="status"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="samplesView" class="view">
+        <div id="sampleTable" class="table"></div>
+      </section>
+
+      <section id="jobsView" class="view">
+        <div id="jobsList" class="jobs"></div>
+        <div id="jobDetail" class="panel job-detail"></div>
+      </section>
+
+      <section id="importView" class="view">
+        <div class="grid two">
+          <section class="panel">
+            <h2>单条录入</h2>
+            <div class="form-grid">
+              <input id="accountName" placeholder="账号名" />
+              <input id="creatorUsername" placeholder="达人 username" />
+              <input id="videoTitle" placeholder="视频标题" />
+              <input id="videoUrl" placeholder="视频链接" />
+              <input id="productName" placeholder="产品名" />
+              <input id="durationSeconds" placeholder="时长秒数" type="number" />
+              <input id="views" placeholder="播放" type="number" />
+              <input id="likes" placeholder="点赞" type="number" />
+              <input id="comments" placeholder="评论" type="number" />
+              <input id="shares" placeholder="分享" type="number" />
+              <input id="orders" placeholder="订单" type="number" />
+              <input id="gmv" placeholder="GMV" type="number" />
+              <input id="samplesReceived" placeholder="样品领取数" type="number" />
+              <input id="postedVideosCount" placeholder="回传视频数" type="number" />
+            </div>
+            <label>原视频文件</label>
+            <input id="originalVideoInput" type="file" accept="video/*" />
+            <input id="originalVideoPath" placeholder="uploads/video/xxx.mp4" />
+            <label>产品图</label>
+            <input id="importProductImageInput" type="file" accept="image/*" />
+            <input id="importProductImagePath" placeholder="uploads/product/xxx.png" />
+            <button id="addVideoBtn" class="primary wide">保存视频</button>
+            <div id="addVideoStatus" class="status"></div>
+          </section>
+          <section class="panel">
+            <h2>CSV 导入</h2>
+            <textarea id="csvInput" spellcheck="false" placeholder="account_name,username,title,video_url,views,likes,comments,shares,orders,gmv,duration_seconds,product_name,sample_received_count,posted_video_count"></textarea>
+            <button id="importCsvBtn" class="primary wide">导入 CSV</button>
+            <div id="importStatus" class="status"></div>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

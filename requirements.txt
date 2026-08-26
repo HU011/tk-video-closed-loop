@@ -1,0 +1,7 @@
+# Runtime uses Python standard library only.
+# External command-line tools are required for full video workflows:
+# - ffmpeg
+# - ffprobe
+# Optional:
+# - yt-dlp, for downloading TikTok page URLs
+
