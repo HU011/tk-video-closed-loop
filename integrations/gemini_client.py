@@ -28,10 +28,12 @@ class GeminiClient:
         product_image_path: str | Path,
         previous_tail_frame_path: str | Path | None = None,
     ) -> dict[str, Any]:
-        if not self.api_key:
+        if self.provider == "mock":
             return self._mock_prompt(segment_index, total_segments)
         if self.provider != "apimart":
             raise ValueError("real Gemini calls currently require GEMINI_PROVIDER=apimart")
+        if not self.api_key:
+            raise ValueError("GEMINI_API_KEY or APIMART_API_KEY is required when GEMINI_PROVIDER=apimart")
         return self._build_prompt_with_apimart_chat(
             segment_index,
             total_segments,

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import json
+import urllib.parse
 from dataclasses import dataclass
 from typing import Any
 
 from core.db import db
 from services.importer import import_video_rows
-from tk_automation.parsers.video_links import extract_video_urls_from_text
+from tk_automation.parsers.video_links import extract_video_urls_from_text, looks_like_video_url, normalize_video_url
 
 
 COMPLETED_VALUES = {
@@ -56,6 +57,49 @@ STATUS_FIELDS = (
     "audit_status",
 )
 
+NEGATIVE_STATUS_MARKERS = (
+    "draft",
+    "pending",
+    "processing",
+    "review",
+    "reject",
+    "rejected",
+    "fail",
+    "failed",
+    "cancel",
+    "canceled",
+    "cancelled",
+    "deleted",
+    "expired",
+    "草稿",
+    "审核",
+    "失败",
+    "拒绝",
+    "取消",
+    "删除",
+)
+
+USERNAME_FIELDS = ("username", "creator_username", "author_unique_id", "handle", "creator_handle")
+TITLE_FIELDS = ("title", "video_title", "desc", "description", "caption")
+PRODUCT_FIELDS = ("product_name", "product", "product_title", "goods_name", "item_name")
+VIDEO_ID_FIELDS = ("video_id", "item_id", "itemId", "aweme_id", "awemeId", "id")
+METRIC_FIELD_ALIASES = {
+    "duration_seconds": ("duration_seconds", "duration", "duration_sec", "durationSeconds", "video_duration"),
+    "views": ("views", "view_count", "viewCount", "play_count", "playCount", "video_views", "vv", "impressions"),
+    "likes": ("likes", "like_count", "likeCount", "digg_count", "diggCount"),
+    "comments": ("comments", "comment_count", "commentCount"),
+    "shares": ("shares", "share_count", "shareCount"),
+    "orders": ("orders", "order_count", "orderCount", "product_order_count", "sale_count", "sales"),
+    "gmv": ("gmv", "video_gmv", "gross_merchandise_value", "revenue", "sales_amount"),
+    "commission_rate": ("commission_rate", "commissionRate", "commission"),
+    "cover_path": ("cover_path", "cover_url", "coverUrl", "thumbnail_url", "thumbnailUrl", "poster_url", "posterUrl"),
+    "follower_count": ("follower_count", "followerCount", "followers", "fans_count", "fansCount"),
+    "sample_received_count": ("sample_received_count", "samples_received", "sampleReceivedCount", "sample_count", "sampleCount"),
+    "posted_video_count": ("posted_video_count", "posted_videos_count", "postedVideoCount", "published_video_count"),
+    "order_count": ("creator_order_count", "creatorOrderCount", "total_order_count", "totalOrderCount"),
+    "creator_gmv": ("creator_gmv", "creatorGmv", "total_gmv", "totalGmv"),
+}
+
 
 @dataclass(frozen=True)
 class CompletedVideoLink:
@@ -68,7 +112,8 @@ class CompletedVideoLink:
     raw: dict[str, Any] | None = None
 
     def to_video_row(self) -> dict[str, Any]:
-        return {
+        raw = self.raw or {}
+        row = {
             "account_name": self.account_name,
             "username": self.username,
             "title": self.title or self.video_url,
@@ -78,6 +123,11 @@ class CompletedVideoLink:
             "collection_status": "completed_video_link",
             "collection_source": self.source,
         }
+        for target, aliases in METRIC_FIELD_ALIASES.items():
+            value = _first_value(raw, aliases)
+            if value not in (None, ""):
+                row[target] = value
+        return row
 
 
 class CompletedVideoLinkCollector:
@@ -122,13 +172,14 @@ class CompletedVideoLinkCollector:
                 video_url = urls[0] if urls else ""
             if not video_url:
                 continue
+            username = _clean_username(_first_text(row, USERNAME_FIELDS)) or "unknown_creator"
             records.append(
                 CompletedVideoLink(
                     video_url=video_url,
                     account_name=str(row.get("account_name") or account_name),
-                    username=str(row.get("username") or row.get("creator_username") or "unknown_creator"),
-                    title=str(row.get("title") or row.get("video_title") or video_url),
-                    product_name=str(row.get("product_name") or row.get("product") or ""),
+                    username=username,
+                    title=_first_text(row, TITLE_FIELDS) or video_url,
+                    product_name=_first_text(row, PRODUCT_FIELDS),
                     source=source,
                     raw=row,
                 )
@@ -142,8 +193,10 @@ class CompletedVideoLinkCollector:
             if value is not None and str(value).strip():
                 status = str(value).strip().lower()
                 break
+        if any(marker in status for marker in NEGATIVE_STATUS_MARKERS):
+            return False
         if not status:
-            return True
+            return bool(self._first_video_url(row) or self._video_id_url(row))
         return status in COMPLETED_VALUES or any(
             marker in status
             for marker in ("complete", "publish", "posted", "success", "finish", "已完成", "已发布", "发布成功")
@@ -154,8 +207,20 @@ class CompletedVideoLinkCollector:
             value = row.get(field)
             if value is not None and str(value).strip():
                 urls = extract_video_urls_from_text(str(value))
-                return urls[0] if urls else str(value).strip()
-        return ""
+                if urls:
+                    return urls[0]
+                raw_url = str(value).strip()
+                if looks_like_video_url(raw_url):
+                    return normalize_video_url(raw_url)
+        return self._video_id_url(row)
+
+    def _video_id_url(self, row: dict[str, Any]) -> str:
+        video_id = str(_first_value(row, VIDEO_ID_FIELDS) or "").strip()
+        username = _clean_username(_first_text(row, USERNAME_FIELDS))
+        if not video_id or not video_id.isdigit() or not username:
+            return ""
+        encoded_username = urllib.parse.quote(username, safe="._-")
+        return f"https://www.tiktok.com/@{encoded_username}/video/{video_id}"
 
     def _looks_like_video_row(self, row: dict[str, Any]) -> bool:
         marker_fields = {
@@ -191,3 +256,29 @@ class CompletedVideoLinkCollector:
             seen.add(record.video_url)
             result.append(record)
         return result
+
+
+def _first_text(row: dict[str, Any], aliases: tuple[str, ...]) -> str:
+    value = _first_value(row, aliases)
+    return str(value).strip() if value not in (None, "") else ""
+
+
+def _first_value(row: dict[str, Any], aliases: tuple[str, ...]) -> Any:
+    for alias in aliases:
+        if alias in row and row[alias] not in (None, ""):
+            return row[alias]
+    for value in row.values():
+        if isinstance(value, dict):
+            found = _first_value(value, aliases)
+            if found not in (None, ""):
+                return found
+    return None
+
+
+def _clean_username(value: str) -> str:
+    username = str(value or "").strip()
+    if username.startswith("@"):
+        username = username[1:]
+    if "/" in username:
+        username = username.rstrip("/").rsplit("/", 1)[-1]
+    return username.strip()

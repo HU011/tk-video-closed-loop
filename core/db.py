@@ -15,6 +15,23 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _first(data: dict[str, Any], *names: str) -> Any:
+    for name in names:
+        value = data.get(name)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _number(value: Any, default: float = 0) -> float:
+    if value in (None, ""):
+        return default
+    try:
+        return float(str(value).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return default
+
+
 def _connect() -> sqlite3.Connection:
     ensure_dirs()
     db_path = ensure_under_root(settings.database_path)
@@ -205,11 +222,15 @@ def upsert_creator(conn: sqlite3.Connection, data: dict[str, Any]) -> int:
         "nickname": str(data.get("nickname") or data.get("creator_nickname") or "").strip(),
         "region": str(data.get("region") or "").strip(),
         "category": str(data.get("category") or "").strip(),
-        "follower_count": int(float(data.get("follower_count") or 0)),
-        "sample_received_count": int(float(data.get("sample_received_count") or data.get("samples_received") or 0)),
-        "posted_video_count": int(float(data.get("posted_video_count") or data.get("posted_videos_count") or 0)),
-        "order_count": int(float(data.get("order_count") or data.get("orders") or 0)),
-        "gmv": float(data.get("creator_gmv") or data.get("gmv") or 0),
+        "follower_count": int(_number(_first(data, "follower_count", "followerCount", "followers", "fans_count", "fansCount"))),
+        "sample_received_count": int(
+            _number(_first(data, "sample_received_count", "samples_received", "sampleReceivedCount", "sample_count", "sampleCount"))
+        ),
+        "posted_video_count": int(
+            _number(_first(data, "posted_video_count", "posted_videos_count", "postedVideoCount", "published_video_count"))
+        ),
+        "order_count": int(_number(_first(data, "creator_order_count", "creatorOrderCount", "order_count", "orders"))),
+        "gmv": _number(_first(data, "creator_gmv", "creatorGmv", "total_gmv", "totalGmv", "gmv")),
         "tags_json": json.dumps(data.get("tags") or [], ensure_ascii=False),
     }
     conn.execute(

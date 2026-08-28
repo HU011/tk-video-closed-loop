@@ -201,4 +201,12 @@ def _upsert_segment(conn: sqlite3.Connection, job_id: int, segment_index: int, *
 
 def _mark_job_failed(job_id: int, error: str) -> None:
     with db() as conn:
+        conn.execute(
+            """
+            UPDATE replication_segments
+            SET status='failed', error=?, updated_at=?
+            WHERE job_id=? AND status IN ('prompting', 'generating')
+            """,
+            (error[:4000], utc_now(), job_id),
+        )
         _update_job(conn, job_id, status="failed", error=error[:4000])

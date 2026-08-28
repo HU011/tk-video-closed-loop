@@ -68,7 +68,7 @@ class Settings:
             apimart_chat_endpoint=get("APIMART_CHAT_ENDPOINT", "https://api.apimart.ai/v1/chat/completions"),
             apimart_upload_images_endpoint=get("APIMART_UPLOAD_IMAGES_ENDPOINT", "https://api.apimart.ai/v1/uploads/images"),
             apimart_task_endpoint_base=get("APIMART_TASK_ENDPOINT_BASE", "https://api.apimart.ai/v1/tasks"),
-            gemini_provider=get("GEMINI_PROVIDER", "apimart").lower(),
+            gemini_provider=get("GEMINI_PROVIDER", "mock").lower(),
             gemini_api_key=get("GEMINI_API_KEY", get("APIMART_API_KEY", "")),
             gemini_model=get("GEMINI_MODEL", "gemini-2.5-flash"),
             seedance_provider=get("SEEDANCE_PROVIDER", "mock").lower(),

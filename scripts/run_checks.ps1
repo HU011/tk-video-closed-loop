@@ -7,7 +7,6 @@ if (Test-Path -LiteralPath ".\venv\Scripts\python.exe") {
     $python = "python"
 }
 
-& $python -m compileall app.py core collection downloading integrations media pipeline screening services scripts tests
+& $python -m compileall app.py core collection downloading integrations media pipeline screening services scripts tests tk_automation
 & $python -m unittest discover -s tests
 & $python scripts\check_setup.py --mode basic
-

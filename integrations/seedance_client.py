@@ -41,7 +41,7 @@ class SeedanceClient:
     ) -> SeedanceResult:
         out = ensure_under_root(output_path)
         tail_out = ensure_under_root(tail_frame_output_path) if tail_frame_output_path else None
-        if self.provider == "mock" or not self.api_key:
+        if self.provider == "mock":
             make_mock_video(product_image_path, out, duration=duration, tail_frame=first_frame_path)
             if tail_out:
                 extract_tail_frame(out, tail_out)
@@ -49,6 +49,8 @@ class SeedanceClient:
 
         if self.provider != "apimart":
             raise ValueError("real Seedance calls currently require SEEDANCE_PROVIDER=apimart")
+        if not self.api_key:
+            raise ValueError("SEEDANCE_API_KEY or APIMART_API_KEY is required when SEEDANCE_PROVIDER=apimart")
 
         video_url, tail_frame_url = self._submit_and_wait_apimart(
             prompt=prompt,
