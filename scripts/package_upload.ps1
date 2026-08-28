@@ -11,7 +11,8 @@ $excludeDirs = @(
     "\__pycache__\",
     "\data\",
     "\uploads\",
-    "\outputs\"
+    "\outputs\",
+    "\runtime\"
 )
 
 $excludeFiles = @(

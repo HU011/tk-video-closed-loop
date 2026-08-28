@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import urllib.parse
 from dataclasses import dataclass
 from typing import Any
@@ -82,7 +83,7 @@ NEGATIVE_STATUS_MARKERS = (
 USERNAME_FIELDS = ("username", "creator_username", "author_unique_id", "handle", "creator_handle")
 TITLE_FIELDS = ("title", "video_title", "desc", "description", "caption")
 PRODUCT_FIELDS = ("product_name", "product", "product_title", "goods_name", "item_name")
-VIDEO_ID_FIELDS = ("video_id", "item_id", "itemId", "aweme_id", "awemeId", "id")
+VIDEO_ID_FIELDS = ("video_id", "videoId", "item_id", "itemId", "aweme_id", "awemeId")
 METRIC_FIELD_ALIASES = {
     "duration_seconds": ("duration_seconds", "duration", "duration_sec", "durationSeconds", "video_duration"),
     "views": ("views", "view_count", "viewCount", "play_count", "playCount", "video_views", "vv", "impressions"),
@@ -133,7 +134,12 @@ class CompletedVideoLink:
 class CompletedVideoLinkCollector:
     def collect_text(self, text: str, account_name: str = "tk_completed", source: str = "text") -> list[CompletedVideoLink]:
         return [
-            CompletedVideoLink(video_url=url, account_name=account_name, source=source)
+            CompletedVideoLink(
+                video_url=url,
+                account_name=account_name,
+                username=_username_from_url(url) or _unknown_username(url),
+                source=source,
+            )
             for url in extract_video_urls_from_text(text)
         ]
 
@@ -142,6 +148,8 @@ class CompletedVideoLinkCollector:
         records = self._rows_to_records(rows, account_name=account_name, source=source)
         if records:
             return self._dedupe(records)
+        if any(self._looks_like_video_row(row) or self._has_video_url_field(row) for row in rows):
+            return []
         try:
             text = json.dumps(data, ensure_ascii=False)
         except TypeError:
@@ -172,7 +180,7 @@ class CompletedVideoLinkCollector:
                 video_url = urls[0] if urls else ""
             if not video_url:
                 continue
-            username = _clean_username(_first_text(row, USERNAME_FIELDS)) or "unknown_creator"
+            username = _clean_username(_first_text(row, USERNAME_FIELDS)) or _username_from_url(video_url) or _unknown_username(video_url)
             records.append(
                 CompletedVideoLink(
                     video_url=video_url,
@@ -236,6 +244,9 @@ class CompletedVideoLinkCollector:
         }
         return any(field in row for field in STATUS_FIELDS) or any(field in row for field in marker_fields)
 
+    def _has_video_url_field(self, row: dict[str, Any]) -> bool:
+        return any(field in row for field in VIDEO_URL_FIELDS)
+
     def _walk_dicts(self, value: Any) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
         if isinstance(value, dict):
@@ -282,3 +293,19 @@ def _clean_username(value: str) -> str:
     if "/" in username:
         username = username.rstrip("/").rsplit("/", 1)[-1]
     return username.strip()
+
+
+def _username_from_url(url: str) -> str:
+    path = urllib.parse.urlparse(str(url)).path
+    parts = [part for part in path.split("/") if part]
+    for index, part in enumerate(parts):
+        if part.startswith("@"):
+            return _clean_username(part)
+        if part == "@" and index + 1 < len(parts):
+            return _clean_username(parts[index + 1])
+    return ""
+
+
+def _unknown_username(video_url: str) -> str:
+    digest = hashlib.sha1(video_url.encode("utf-8")).hexdigest()[:10]
+    return f"unknown_{digest}"

@@ -59,6 +59,7 @@ tk-video-closed-loop/
 │  │  └─ cdp_client.py            # Chrome DevTools Protocol 连接
 │  ├─ collectors/
 │  │  ├─ network_monitor.py       # 监听 TK 后台真实 Network 请求
+│  │  ├─ discovery.py             # 从 Network 响应中识别可复用的后台列表接口
 │  │  ├─ backend_api.py           # 已登录页面上下文主动请求 TK 后台 API
 │  │  └─ completed_video_links.py # 视频链接解析、完成状态过滤和入库
 │  └─ parsers/
@@ -168,6 +169,8 @@ DATABASE_PATH=data/app.db
 ```env
 APIMART_API_KEY=你的_APIMart_Key
 GEMINI_PROVIDER=apimart
+GEMINI_REQUEST_FORMAT=native
+GEMINI_ENDPOINT=
 GEMINI_MODEL=gemini-2.5-flash
 
 SEEDANCE_PROVIDER=apimart
@@ -179,7 +182,7 @@ FFMPEG_BIN=ffmpeg
 FFPROBE_BIN=ffprobe
 ```
 
-`PUBLIC_BASE_URL` 必须能被 APIMart/Seedance 访问，并能反向访问当前服务的 `/files/...` 素材地址。真实生成时，本地切片视频、产品图和尾帧图都需要通过这个地址被模型服务拉取。
+`GEMINI_REQUEST_FORMAT=native` 会使用 APIMart 的 Gemini 原生 `generateContent` 接口，把当前 15 秒源片段、产品图和上一段尾帧作为多模态输入。没有配置 `PUBLIC_BASE_URL` 时，Gemini 只能内嵌读取 20MB 以下的本地素材；Seedance 生成仍需要可被 APIMart 访问的 `/files/...` 视频地址，因此真实生成建议配置公网访问地址。
 
 ### 视频下载
 
@@ -225,6 +228,14 @@ YTDLP_BIN=yt-dlp
 
 监听时需要在 TK 后台页面里手动打开已完成视频列表、切换筛选条件或翻页。目标请求一般满足这些特征：返回 `200`、响应是 JSON、response 里能看到视频链接或视频 ID、达人/商品/播放/订单等字段，并且分页时同一个接口会重复出现。
 
+监听结果会输出 `suggestions`，其中包含已脱敏的候选接口配置、分页字段和可复制的采集命令。也可以直接使用自动发现并采集：
+
+```powershell
+.\venv\Scripts\python.exe scripts\tk_collect_completed_videos.py collect-auto --request-url-contains video --listen-timeout 120 --max-pages 10 --import-db
+```
+
+`collect-auto` 会先监听当前已登录 Chrome 的 Network 响应，从候选接口里选最高分接口，再复用同一个浏览器页面上下文继续分页请求。输出里的 `cookie`、`authorization`、`csrf/token/session` 等字段会脱敏，真实请求只在当前进程内使用浏览器登录态。
+
 确认接口后，再主动请求后台 API 并导入数据库：
 
 ```powershell
@@ -261,7 +272,7 @@ uploads/video/demo.mp4
 
 1. 原视频最多处理 60 秒。
 2. 使用 FFmpeg 切成最多 4 段，每段不超过 15 秒。
-3. 第 1 段使用当前片段、产品图和完整原视频信息生成提示词。
+3. Gemini 每次只分析当前 15 秒源片段、产品图和可选的上一段尾帧图，不把完整 1 分钟原片作为参考视频上传给模型。
 4. 第 2-4 段使用当前片段、产品图和上一段 Seedance 返回尾帧继续生成。
 5. Seedance 请求固定带 `return_last_frame=true`。
 6. 优先使用接口返回的尾帧 URL；如果接口未返回尾帧，才本地抽帧兜底。

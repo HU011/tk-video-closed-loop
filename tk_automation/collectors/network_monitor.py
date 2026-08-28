@@ -6,13 +6,14 @@ import os
 import time
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from core.db import db
 from services.importer import import_video_rows
 from tk_automation.browser.cdp_client import CDPClient, CDPError
 from tk_automation.collectors.backend_api import parse_bool
 from tk_automation.collectors.completed_video_links import CompletedVideoLink, CompletedVideoLinkCollector
+from tk_automation.collectors.discovery import DiscoveredBackendApi, suggest_backend_api
 
 
 SENSITIVE_HEADER_NAMES = {
@@ -24,6 +25,7 @@ SENSITIVE_HEADER_NAMES = {
     "x-tt-token",
     "x-tt-csrf-token",
 }
+SENSITIVE_FIELD_MARKERS = ("token", "auth", "cookie", "csrf", "secret", "password", "session")
 
 
 @dataclass(frozen=True)
@@ -83,6 +85,7 @@ class CapturedRequest:
 class NetworkMonitorResult:
     captured_requests: list[CapturedRequest]
     records: list[CompletedVideoLink]
+    suggestions: list[DiscoveredBackendApi]
 
 
 class TKNetworkMonitor:
@@ -101,6 +104,7 @@ class TKNetworkMonitor:
         responses: dict[str, dict[str, Any]] = {}
         captured: list[CapturedRequest] = []
         records: list[CompletedVideoLink] = []
+        suggestions: list[DiscoveredBackendApi] = []
         deadline = time.monotonic() + self.config.timeout
         try:
             client.call("Network.enable", timeout=10)
@@ -124,9 +128,22 @@ class TKNetworkMonitor:
                     page_records = self._records_from_body(body, response)
                     records.extend(page_records)
                     captured.append(self._captured_request(request_id, requests[request_id], response, len(page_records)))
+                    suggestion = suggest_backend_api(
+                        requests[request_id],
+                        response,
+                        body,
+                        record_count=len(page_records),
+                        account_name=self.config.account_name,
+                    )
+                    if suggestion:
+                        suggestions.append(suggestion)
         finally:
             client.close()
-        return NetworkMonitorResult(captured_requests=captured, records=self.link_collector._dedupe(records))
+        return NetworkMonitorResult(
+            captured_requests=captured,
+            records=self.link_collector._dedupe(records),
+            suggestions=_dedupe_suggestions(suggestions),
+        )
 
     def import_to_db(self, records: list[CompletedVideoLink]) -> dict[str, int]:
         rows = [record.to_video_row() for record in self.link_collector._dedupe(records)]
@@ -173,9 +190,9 @@ class TKNetworkMonitor:
             request_id=request_id,
             url=url,
             method=str(request.get("method") or ""),
-            query=dict(parse_qsl(urlsplit(url).query, keep_blank_values=True)),
+            query=sanitize_query(dict(parse_qsl(urlsplit(url).query, keep_blank_values=True))),
             headers=sanitize_headers(request.get("headers") or {}),
-            post_data=str(request.get("postData") or ""),
+            post_data=sanitize_post_data(str(request.get("postData") or "")),
             status=int(response.get("status") or 0),
             mime_type=str(response.get("mimeType") or ""),
             record_count=record_count,
@@ -196,3 +213,54 @@ def sanitize_headers(headers: dict[str, Any]) -> dict[str, str]:
         else:
             result[header_name] = str(value)
     return result
+
+
+def sanitize_query(query: dict[str, Any]) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for key, value in query.items():
+        result[str(key)] = "***" if _is_sensitive_field(str(key)) else str(value)
+    return result
+
+
+def sanitize_post_data(post_data: str) -> str:
+    if not post_data:
+        return ""
+    try:
+        parsed = json.loads(post_data)
+    except json.JSONDecodeError:
+        if "=" not in post_data:
+            return post_data
+        values = dict(parse_qsl(post_data, keep_blank_values=True))
+        if not values:
+            return post_data
+        return urlencode({key: "***" if _is_sensitive_field(key) else value for key, value in values.items()})
+    return json.dumps(_sanitize_value(parsed), ensure_ascii=False)
+
+
+def _sanitize_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: ("***" if _is_sensitive_field(str(key)) else _sanitize_value(child)) for key, child in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_value(item) for item in value]
+    return value
+
+
+def _is_sensitive_field(name: str) -> bool:
+    lowered = name.lower()
+    return any(marker in lowered for marker in SENSITIVE_FIELD_MARKERS)
+
+
+def _dedupe_suggestions(suggestions: list[DiscoveredBackendApi]) -> list[DiscoveredBackendApi]:
+    seen: set[tuple[str, str, str]] = set()
+    result: list[DiscoveredBackendApi] = []
+    for suggestion in sorted(suggestions, key=lambda item: item.score, reverse=True):
+        key = (
+            suggestion.env.get("TK_BACKEND_API_METHOD", ""),
+            suggestion.env.get("TK_BACKEND_API_URL", ""),
+            suggestion.env.get("TK_BACKEND_API_BODY", ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(suggestion)
+    return result[:5]

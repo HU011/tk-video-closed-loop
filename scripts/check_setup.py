@@ -60,7 +60,21 @@ def main() -> int:
 
     real_required = args.mode == "real"
     add("APIMart API key configured", bool(settings.apimart_api_key), real_required, "APIMART_API_KEY")
+    add("Gemini API key configured", bool(settings.gemini_api_key), real_required, "GEMINI_API_KEY or APIMART_API_KEY")
     add("Gemini provider is apimart", settings.gemini_provider == "apimart", real_required, settings.gemini_provider)
+    add(
+        "Gemini request format valid",
+        settings.gemini_request_format in {"native", "chat"},
+        True,
+        settings.gemini_request_format,
+    )
+    add(
+        "Gemini native endpoint available",
+        bool(settings.gemini_endpoint or settings.apimart_base_url) if settings.gemini_request_format == "native" else True,
+        real_required,
+        settings.gemini_endpoint or f"{settings.apimart_base_url}/v1beta/models/{settings.gemini_model}:generateContent",
+    )
+    add("Seedance API key configured", bool(settings.seedance_api_key), real_required, "SEEDANCE_API_KEY or APIMART_API_KEY")
     add("Seedance provider is apimart", settings.seedance_provider == "apimart", real_required, settings.seedance_provider)
     parsed_public = urlparse(settings.public_base_url)
     public_ok = parsed_public.scheme in {"http", "https"} and bool(parsed_public.netloc)

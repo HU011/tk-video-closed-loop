@@ -44,6 +44,20 @@ def main() -> int:
     listen_network.add_argument("--no-response-body", action="store_true", help="只打印请求细节，不解析响应正文。")
     listen_network.add_argument("--import-db", action="store_true")
 
+    collect_auto = sub.add_parser("collect-auto", help="监听 TK 后台 Network，自动发现接口并翻页采集已完成视频链接。")
+    collect_auto.add_argument("--account", default="", help="写入数据库时使用的账号标签。")
+    collect_auto.add_argument("--cdp-host", default="", help="Chrome DevTools 主机。")
+    collect_auto.add_argument("--cdp-port", type=int, default=None, help="Chrome DevTools 端口。")
+    collect_auto.add_argument("--page-url-contains", default="", help="选择 URL 包含该文本的已登录 Chrome 页面。")
+    collect_auto.add_argument("--request-url-contains", default="", help="只监听 URL 包含该文本的后台请求。")
+    collect_auto.add_argument("--methods", default="", help="请求方法过滤，例如 GET,POST。")
+    collect_auto.add_argument("--listen-timeout", type=int, default=None, help="监听秒数。")
+    collect_auto.add_argument("--max-responses", type=int, default=None, help="最多处理多少个匹配响应。")
+    collect_auto.add_argument("--max-pages", type=int, default=None, help="发现接口后继续采集的最大页数。")
+    collect_auto.add_argument("--request-timeout", type=int, default=None, help="后台 API 请求超时秒数。")
+    collect_auto.add_argument("--no-stop-on-empty", action="store_true")
+    collect_auto.add_argument("--import-db", action="store_true")
+
     collect_api = sub.add_parser("collect-api", help="通过已登录 Chrome 请求 TK 后台 API，采集已完成视频链接。")
     collect_api.add_argument("--api-url", default="", help="TK 后台接口路径或完整 URL；默认读取 TK_BACKEND_API_URL。")
     collect_api.add_argument("--method", default="", help="GET 或 POST；默认读取 TK_BACKEND_API_METHOD。")
@@ -103,10 +117,71 @@ def main() -> int:
             "captured_count": len(result_data.captured_requests),
             "count": len(result_data.records),
             "requests": [request.to_dict() for request in result_data.captured_requests],
+            "suggestions": [suggestion.to_dict() for suggestion in result_data.suggestions],
             "items": [record.to_video_row() for record in result_data.records],
         }
         if args.import_db:
             result["import"] = monitor.import_to_db(result_data.records)
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.command == "collect-auto":
+        if args.import_db:
+            init_db()
+        env_config = NetworkMonitorConfig.from_env()
+        monitor_config = replace(
+            env_config,
+            account_name=args.account or env_config.account_name,
+            cdp_host=args.cdp_host or env_config.cdp_host,
+            cdp_port=args.cdp_port if args.cdp_port is not None else env_config.cdp_port,
+            page_url_contains=args.page_url_contains or env_config.page_url_contains,
+            request_url_contains=args.request_url_contains or env_config.request_url_contains,
+            methods=parse_methods(args.methods) if args.methods else env_config.methods,
+            timeout=args.listen_timeout if args.listen_timeout is not None else env_config.timeout,
+            max_responses=args.max_responses if args.max_responses is not None else env_config.max_responses,
+            import_response_body=True,
+        )
+        monitor = TKNetworkMonitor(monitor_config)
+        monitor_result = monitor.listen()
+        if not monitor_result.suggestions:
+            print(
+                json.dumps(
+                    {
+                        "error": "没有从 Network 响应中发现可复用的已完成视频接口",
+                        "captured_count": len(monitor_result.captured_requests),
+                        "requests": [request.to_dict() for request in monitor_result.captured_requests],
+                        "items": [record.to_video_row() for record in monitor_result.records],
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 1
+        suggestion = monitor_result.suggestions[0]
+        api_config = suggestion.to_config(max_pages=args.max_pages, account_name=args.account or monitor_config.account_name)
+        api_config = replace(
+            api_config,
+            cdp_host=monitor_config.cdp_host,
+            cdp_port=monitor_config.cdp_port,
+            page_url_contains=monitor_config.page_url_contains,
+            request_timeout=args.request_timeout if args.request_timeout is not None else api_config.request_timeout,
+            stop_on_empty=False if args.no_stop_on_empty else api_config.stop_on_empty,
+        )
+        collector = BackendApiCompletedVideoCollector(api_config)
+        collected = collector.collect()
+        result = {
+            "discovered_api": suggestion.to_dict(),
+            "listen": {
+                "captured_count": len(monitor_result.captured_requests),
+                "count": len(monitor_result.records),
+                "requests": [request.to_dict() for request in monitor_result.captured_requests],
+            },
+            "count": len(collected.records),
+            "pages": [page.__dict__ for page in collected.pages],
+            "items": [record.to_video_row() for record in collected.records],
+        }
+        if args.import_db:
+            result["import"] = collector.import_to_db(collected.records)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
 

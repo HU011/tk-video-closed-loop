@@ -4,6 +4,7 @@ import base64
 import json
 import mimetypes
 import re
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -34,14 +35,73 @@ class GeminiClient:
             raise ValueError("real Gemini calls currently require GEMINI_PROVIDER=apimart")
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY or APIMART_API_KEY is required when GEMINI_PROVIDER=apimart")
-        return self._build_prompt_with_apimart_chat(
+        if settings.gemini_request_format == "chat":
+            return self._build_prompt_with_apimart_chat(
+                segment_index,
+                total_segments,
+                source_segment_path,
+                original_video_path,
+                product_image_path,
+                previous_tail_frame_path,
+            )
+        if settings.gemini_request_format != "native":
+            raise ValueError("GEMINI_REQUEST_FORMAT must be native or chat")
+        return self._build_prompt_with_apimart_native(
             segment_index,
             total_segments,
             source_segment_path,
-            original_video_path,
             product_image_path,
             previous_tail_frame_path,
         )
+
+    def _build_prompt_with_apimart_native(
+        self,
+        segment_index: int,
+        total_segments: int,
+        source_segment_path: str | Path,
+        product_image_path: str | Path,
+        previous_tail_frame_path: str | Path | None,
+    ) -> dict[str, Any]:
+        instruction = self._analysis_instruction(segment_index, total_segments, bool(previous_tail_frame_path))
+        parts: list[dict[str, Any]] = [
+            {
+                "text": (
+                    instruction
+                    + "\n\n只分析当前上传的源视频片段，不要把完整原片作为参考视频。"
+                    + "请输出能直接交给 Seedance 2.0 的复刻提示词。"
+                )
+            },
+            {"text": "当前需要复刻的源视频片段："},
+            self._media_part_for_native(source_segment_path, default_mime="video/mp4"),
+            {"text": "用户上传的目标产品图："},
+            self._media_part_for_native(product_image_path, default_mime="image/jpeg"),
+        ]
+        if previous_tail_frame_path:
+            parts.extend(
+                [
+                    {"text": "上一段 Seedance 返回的尾帧图，将作为当前段首帧连续性参考："},
+                    self._media_part_for_native(previous_tail_frame_path, default_mime="image/jpeg"),
+                ]
+            )
+        body = {
+            "contents": [{"role": "user", "parts": parts}],
+            "systemInstruction": {
+                "parts": [
+                    {
+                        "text": (
+                            "你是电商短视频复刻提示词分析器，只输出严格 JSON。"
+                            "JSON 字段必须包含 prompt、shot_notes、warnings。"
+                        )
+                    }
+                ]
+            },
+            "generationConfig": {
+                "temperature": 0.35,
+                "responseMimeType": "application/json",
+            },
+        }
+        data = self.apimart.json_request(self._native_endpoint(), body)
+        return self._parse_prompt_json(self._extract_gemini_text(data))
 
     def _build_prompt_with_apimart_chat(
         self,
@@ -84,6 +144,37 @@ class GeminiClient:
         }
         data = self.apimart.json_request(settings.apimart_chat_endpoint, body)
         return self._parse_prompt_json(self._extract_chat_text(data))
+
+    def _native_endpoint(self) -> str:
+        if settings.gemini_endpoint:
+            return settings.gemini_endpoint
+        encoded_model = urllib.parse.quote(self.model, safe="")
+        return f"{settings.apimart_base_url}/v1beta/models/{encoded_model}:generateContent"
+
+    def _media_part_for_native(self, path: str | Path, default_mime: str) -> dict[str, Any]:
+        if is_remote_url(path):
+            text = str(path)
+            if text.startswith("data:"):
+                header, _, payload = text.partition(",")
+                mime = header[5:].split(";", 1)[0] or default_mime
+                return {"inlineData": {"mimeType": mime, "data": payload}}
+            return {"fileData": {"mimeType": self._mime_type(path, default_mime), "fileUri": text}}
+
+        source = ensure_under_root(path)
+        mime = self._mime_type(source, default_mime)
+        if settings.public_base_url:
+            return {"fileData": {"mimeType": mime, "fileUri": public_project_url(source)}}
+
+        raw = source.read_bytes()
+        if len(raw) > 20 * 1024 * 1024:
+            raise RuntimeError(
+                f"{source.name} is larger than 20MB. Configure PUBLIC_BASE_URL or upload a public file URL for Gemini video input."
+            )
+        return {"inlineData": {"mimeType": mime, "data": base64.b64encode(raw).decode("ascii")}}
+
+    def _mime_type(self, path: str | Path, default_mime: str) -> str:
+        name = urllib.parse.urlsplit(str(path)).path or str(path)
+        return mimetypes.guess_type(name)[0] or default_mime
 
     def _image_url_for_chat(self, path: str | Path | None) -> str:
         if not path:
@@ -165,3 +256,14 @@ class GeminiClient:
             if isinstance(content, list):
                 return "\n".join(part.get("text", "") for part in content if isinstance(part, dict)).strip()
         return json.dumps(data, ensure_ascii=False)
+
+    def _extract_gemini_text(self, data: dict[str, Any]) -> str:
+        payload = data.get("data", data)
+        candidates = payload.get("candidates") or []
+        for candidate in candidates:
+            content = candidate.get("content") or {}
+            parts = content.get("parts") or []
+            texts = [str(part.get("text") or "") for part in parts if isinstance(part, dict) and part.get("text")]
+            if texts:
+                return "\n".join(texts).strip()
+        return self._extract_chat_text(data)

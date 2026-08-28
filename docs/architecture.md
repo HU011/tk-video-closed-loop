@@ -13,7 +13,7 @@
 - `services/replicator.py`：复刻任务编排和后台执行。
 - `media/ffmpeg_tools.py`：探测时长、切分、抽尾帧、拼接、mock 视频。
 - `integrations/apimart_client.py`：APIMart JSON 请求、图片上传、结果下载。
-- `integrations/gemini_client.py`：APIMart Chat Completions 调 Gemini 生成分段提示词。
+- `integrations/gemini_client.py`：APIMart Gemini 原生多模态 `generateContent` 生成分段提示词；可兼容旧 Chat Completions。
 - `integrations/seedance_client.py`：APIMart Seedance 任务提交、轮询、视频和尾帧下载；默认 mock。
 - `static/`：原生前端工作台。
 
@@ -21,7 +21,7 @@
 
 ```text
 采集/下载/导入 -> SQLite -> 分析评分 -> 可视化筛选 -> 复刻任务
-复刻任务 -> FFmpeg 切片 -> APIMart Gemini 提示词 -> APIMart Seedance 分段生成 -> Seedance 返回尾帧 -> 拼接
+复刻任务 -> FFmpeg 切片 -> APIMart Gemini 分析当前片段/产品图/尾帧 -> APIMart Seedance 分段生成 -> Seedance 返回尾帧 -> 拼接
 ```
 
 ## 文件边界

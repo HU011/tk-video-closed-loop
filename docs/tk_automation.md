@@ -5,7 +5,8 @@
 TK 后台采集只有两条主线：
 
 1. 监听请求：你在已登录 TK 后台打开“已完成/已发布视频”相关页面并翻页，程序监听 Network，记录真实接口的 `url`、`method`、`headers`、`body`、分页参数和返回结构，并从 response 中提取视频链接。
-2. 主动请求：确认接口后，程序复用已登录 Chrome 页面里的 Cookie/session，在页面上下文中执行 `fetch`，分页请求已完成视频列表并入库。
+2. 自动发现并采集：监听到候选列表接口后，程序会根据响应字段和分页特征生成 `suggestions`，选择最高分接口继续翻页采集。
+3. 主动请求：确认接口后，程序复用已登录 Chrome 页面里的 Cookie/session，在页面上下文中执行 `fetch`，分页请求已完成视频列表并入库。
 
 ## 模块结构
 
@@ -18,6 +19,7 @@ tk_automation/
 │  └─ cdp_client.py              # Chrome DevTools Protocol 连接
 ├─ collectors/
 │  ├─ network_monitor.py         # 监听 TK 后台真实 Network 请求
+│  ├─ discovery.py               # 从 Network 响应中识别候选列表接口和分页字段
 │  ├─ backend_api.py             # 已登录页面上下文主动请求 TK 后台 API
 │  └─ completed_video_links.py   # 视频链接解析、完成状态过滤和入库
 ├─ parsers/
@@ -90,7 +92,25 @@ runtime/chrome_profile
 }
 ```
 
-`headers` 会默认脱敏 `cookie`、`authorization`、`x-csrf-token` 等敏感字段。监听模式的用途是确认真实接口、请求方法、分页字段、请求体和返回结构。
+`headers`、`query` 和 `post_data` 会默认脱敏 `cookie`、`authorization`、`csrf/token/session` 等敏感字段。监听模式的用途是确认真实接口、请求方法、分页字段、请求体和返回结构。
+
+监听输出还会包含 `suggestions`：
+
+```json
+{
+  "score": 78,
+  "reasons": ["HTTP 200", "响应是 JSON", "已提取 12 条视频记录"],
+  "env": {
+    "TK_BACKEND_API_URL": "https://.../completed/video/list?csrf_token=%2A%2A%2A",
+    "TK_BACKEND_API_METHOD": "POST",
+    "TK_BACKEND_API_BODY": "{\"page\":\"{page}\",\"page_size\":\"{page_size}\"}",
+    "TK_BACKEND_PAGE_PARAM": "page",
+    "TK_BACKEND_PAGE_SIZE_PARAM": "page_size"
+  }
+}
+```
+
+`env` 是给本地 `.env` 参考用的脱敏版本；真实自动采集不会把敏感值写入文件，只在当前进程中复用已登录 Chrome 的上下文。
 
 ### 怎么确认目标接口
 
@@ -117,6 +137,14 @@ runtime/chrome_profile
 ```powershell
 .\venv\Scripts\python.exe scripts\tk_collect_completed_videos.py listen-network --request-url-contains video --timeout 120 --import-db
 ```
+
+自动发现接口并继续翻页采集：
+
+```powershell
+.\venv\Scripts\python.exe scripts\tk_collect_completed_videos.py collect-auto --request-url-contains video --listen-timeout 120 --max-pages 10 --import-db
+```
+
+`collect-auto` 的流程是：连接已登录 Chrome -> 监听当前 TK 页面 Network -> 解析返回 JSON 里的视频记录 -> 根据字段和分页参数生成候选接口 -> 用最高分接口在页面上下文执行 `fetch` -> 翻页采集 -> 可选入库。
 
 ## 方式二：主动请求
 

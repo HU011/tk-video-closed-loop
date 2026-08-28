@@ -178,7 +178,7 @@ class Handler(BaseHTTPRequestHandler):
     def _serve_static(self, relative: str) -> None:
         relative = relative.strip("/") or "index.html"
         target = ensure_under_root(STATIC_DIR / relative)
-        if not str(target).lower().startswith(str(STATIC_DIR.resolve()).lower()):
+        if not _path_is_under(target, STATIC_DIR.resolve()):
             return self._json({"error": "file access denied"}, status=HTTPStatus.FORBIDDEN)
         if not target.exists() or not target.is_file():
             return self._json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
@@ -187,7 +187,7 @@ class Handler(BaseHTTPRequestHandler):
     def _serve_project_file(self, relative: str) -> None:
         target = public_file_path(relative)
         allowed_roots = (UPLOADS_DIR.resolve(), OUTPUTS_DIR.resolve())
-        if not any(str(target).lower().startswith(str(root).lower()) for root in allowed_roots):
+        if not any(_path_is_under(target, root) for root in allowed_roots):
             return self._json({"error": "file access denied"}, status=HTTPStatus.FORBIDDEN)
         if not target.exists() or not target.is_file():
             return self._json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
@@ -227,6 +227,22 @@ def save_upload(body: dict[str, Any]) -> dict[str, str]:
     return {"path": relpath(target), "url": "/files/" + relpath(target)}
 
 
+def _path_is_under(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _limit(query: dict[str, str], default: int = 200, maximum: int = 500) -> int:
+    try:
+        value = int(query.get("limit") or default)
+    except ValueError:
+        value = default
+    return max(1, min(value, maximum))
+
+
 def list_rows(table: str, order: str = "id DESC", limit: int = 200) -> dict[str, Any]:
     with db() as conn:
         rows = conn.execute(f"SELECT * FROM {table} ORDER BY {order} LIMIT ?", (limit,)).fetchall()
@@ -235,6 +251,16 @@ def list_rows(table: str, order: str = "id DESC", limit: int = 200) -> dict[str,
 
 def get_module_status() -> dict[str, Any]:
     downloader = VideoDownloader()
+    ffmpeg_available = command_available(settings.ffmpeg_bin)
+    ffprobe_available = command_available(settings.ffprobe_bin)
+    public_url_ready = bool(settings.public_base_url)
+    gemini_format_ready = settings.gemini_request_format in {"native", "chat"}
+    gemini_ready = settings.gemini_provider == "mock" or (
+        settings.gemini_provider == "apimart" and bool(settings.gemini_api_key) and gemini_format_ready
+    )
+    seedance_ready = settings.seedance_provider == "mock" or (
+        settings.seedance_provider == "apimart" and bool(settings.seedance_api_key) and public_url_ready
+    )
     return {
         "collection": {
             "ready": True,
@@ -247,9 +273,16 @@ def get_module_status() -> dict[str, Any]:
             "sample_candidate_threshold": 50,
         },
         "replication": {
-            "ready": True,
+            "ready": ffmpeg_available and ffprobe_available and gemini_ready and seedance_ready,
             "max_duration_seconds": 60,
             "segment_seconds": 15,
+            "ffmpeg_available": ffmpeg_available,
+            "ffprobe_available": ffprobe_available,
+            "gemini_ready": gemini_ready,
+            "seedance_ready": seedance_ready,
+            "public_base_url_ready": public_url_ready,
+            "gemini_provider": settings.gemini_provider,
+            "gemini_request_format": settings.gemini_request_format,
             "seedance_provider": settings.seedance_provider,
             "return_last_frame": True,
         },
@@ -280,7 +313,7 @@ def download_video(body: dict[str, Any]) -> dict[str, Any]:
 
 
 def list_creators(query: dict[str, str]) -> dict[str, Any]:
-    limit = min(int(query.get("limit") or 200), 500)
+    limit = _limit(query)
     with db() as conn:
         rows = conn.execute(
             """
@@ -297,7 +330,7 @@ def list_creators(query: dict[str, str]) -> dict[str, Any]:
 
 
 def list_videos(query: dict[str, str]) -> dict[str, Any]:
-    limit = min(int(query.get("limit") or 200), 500)
+    limit = _limit(query)
     hot_only = query.get("hot") == "1"
     where = "WHERE v.hot_score >= 60" if hot_only else ""
     with db() as conn:
@@ -320,7 +353,7 @@ def list_videos(query: dict[str, str]) -> dict[str, Any]:
 
 
 def list_candidates(query: dict[str, str]) -> dict[str, Any]:
-    limit = min(int(query.get("limit") or 200), 500)
+    limit = _limit(query)
     with db() as conn:
         rows = conn.execute(
             """
@@ -387,6 +420,8 @@ def get_dashboard() -> dict[str, Any]:
             "sample_candidates": conn.execute("SELECT COUNT(*) FROM sample_candidates").fetchone()[0],
             "jobs": conn.execute("SELECT COUNT(*) FROM replication_jobs").fetchone()[0],
         }
+    modules = get_module_status()
+    replication = modules["replication"]
     return {
         "counts": counts,
         "hot_videos": list_videos({"hot": "1", "limit": "8"})["items"],
@@ -396,8 +431,12 @@ def get_dashboard() -> dict[str, Any]:
             "seedance_provider": settings.seedance_provider,
             "gemini_configured": bool(settings.gemini_api_key),
             "gemini_provider": settings.gemini_provider,
+            "gemini_request_format": settings.gemini_request_format,
             "apimart_configured": bool(settings.apimart_api_key),
             "public_base_url": settings.public_base_url,
+            "replication_ready": replication["ready"],
+            "gemini_ready": replication["gemini_ready"],
+            "seedance_ready": replication["seedance_ready"],
             "ffmpeg_available": command_available(settings.ffmpeg_bin),
             "ffprobe_available": command_available(settings.ffprobe_bin),
             "yt_dlp_available": command_available(settings.ytdlp_bin),

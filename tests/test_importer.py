@@ -112,6 +112,21 @@ class ImporterTests(unittest.TestCase):
         self.assertEqual(rows[0]["views"], 250)
         self.assertEqual(rows[0]["likes"], 10)
 
+    def test_missing_username_is_derived_from_tiktok_url(self):
+        result = import_video_rows(
+            self.conn,
+            [
+                {
+                    "account_name": "shop_a",
+                    "video_url": "https://www.tiktok.com/@derived_user/video/200",
+                    "views": "10",
+                }
+            ],
+        )
+        creator = self.conn.execute("SELECT username FROM creators").fetchone()
+        self.assertEqual(result["imported"], 1)
+        self.assertEqual(creator["username"], "derived_user")
+
 
 if __name__ == "__main__":
     unittest.main()

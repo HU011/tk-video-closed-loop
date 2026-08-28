@@ -34,6 +34,8 @@ class Settings:
     apimart_upload_images_endpoint: str
     apimart_task_endpoint_base: str
     gemini_provider: str
+    gemini_request_format: str
+    gemini_endpoint: str
     gemini_api_key: str
     gemini_model: str
     seedance_provider: str
@@ -69,6 +71,8 @@ class Settings:
             apimart_upload_images_endpoint=get("APIMART_UPLOAD_IMAGES_ENDPOINT", "https://api.apimart.ai/v1/uploads/images"),
             apimart_task_endpoint_base=get("APIMART_TASK_ENDPOINT_BASE", "https://api.apimart.ai/v1/tasks"),
             gemini_provider=get("GEMINI_PROVIDER", "mock").lower(),
+            gemini_request_format=get("GEMINI_REQUEST_FORMAT", "native").lower(),
+            gemini_endpoint=get("GEMINI_ENDPOINT", ""),
             gemini_api_key=get("GEMINI_API_KEY", get("APIMART_API_KEY", "")),
             gemini_model=get("GEMINI_MODEL", "gemini-2.5-flash"),
             seedance_provider=get("SEEDANCE_PROVIDER", "mock").lower(),

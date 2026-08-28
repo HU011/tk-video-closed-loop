@@ -2,7 +2,8 @@ import unittest
 
 from tk_automation.collectors.completed_video_links import CompletedVideoLinkCollector
 from tk_automation.collectors.backend_api import add_query_params, find_first_bool, find_first_value, render_template
-from tk_automation.collectors.network_monitor import parse_methods, sanitize_headers
+from tk_automation.collectors.discovery import suggest_backend_api
+from tk_automation.collectors.network_monitor import parse_methods, sanitize_headers, sanitize_post_data, sanitize_query
 from tk_automation.parsers.video_links import extract_video_urls_from_text, looks_like_video_url, normalize_video_url
 
 
@@ -76,6 +77,24 @@ class TKAutomationTests(unittest.TestCase):
         self.assertEqual(row["gmv"], "321.5")
         self.assertEqual(row["duration_seconds"], "18")
 
+    def test_api_data_does_not_fallback_import_pending_video(self):
+        records = CompletedVideoLinkCollector().collect_api_data(
+            {"list": [{"creator_username": "demo", "video_link": "https://www.tiktok.com/@demo/video/400", "publish_status": "pending"}]},
+            account_name="shop_a",
+        )
+        self.assertEqual(records, [])
+
+    def test_api_data_does_not_treat_generic_id_as_video_id(self):
+        records = CompletedVideoLinkCollector().collect_api_data(
+            {"list": [{"creator_username": "demo", "id": "500", "publish_status": "published"}]},
+            account_name="shop_a",
+        )
+        self.assertEqual(records, [])
+
+    def test_collect_text_derives_creator_from_tiktok_url(self):
+        records = CompletedVideoLinkCollector().collect_text("https://www.tiktok.com/@demo_creator/video/600")
+        self.assertEqual(records[0].username, "demo_creator")
+
     def test_api_data_rejects_generic_image_url(self):
         records = CompletedVideoLinkCollector().collect_api_data(
             {"list": [{"url": "https://example.com/cover.jpg", "publish_status": "published", "title": "not video"}]},
@@ -100,6 +119,32 @@ class TKAutomationTests(unittest.TestCase):
         self.assertEqual(headers["Cookie"], "***")
         self.assertEqual(headers["authorization"], "***")
         self.assertEqual(headers["content-type"], "application/json")
+
+    def test_network_monitor_sanitizes_query_and_post_data(self):
+        self.assertEqual(sanitize_query({"csrf_token": "secret", "page": "1"}), {"csrf_token": "***", "page": "1"})
+        self.assertEqual(
+            sanitize_post_data('{"token":"secret","page":1,"filter":{"status":"published"}}'),
+            '{"token": "***", "page": 1, "filter": {"status": "published"}}',
+        )
+        self.assertEqual(sanitize_post_data("csrf_token=secret&page=1"), "csrf_token=%2A%2A%2A&page=1")
+
+    def test_discovery_suggests_backend_api_from_video_response(self):
+        request = {
+            "url": "https://seller.tiktokshop.com/api/affiliate/video/list?page=1&page_size=20&csrf_token=secret",
+            "method": "GET",
+            "headers": {"accept": "application/json", "cookie": "sid=secret"},
+        }
+        response = {"url": request["url"], "status": 200, "mimeType": "application/json"}
+        body = '{"data":{"list":[{"creator_username":"demo","video_link":"https://www.tiktok.com/@demo/video/700","publish_status":"published"}],"has_more":false}}'
+        suggestion = suggest_backend_api(request, response, body, record_count=1, account_name="shop_a")
+        self.assertIsNotNone(suggestion)
+        assert suggestion is not None
+        self.assertEqual(suggestion.env["TK_BACKEND_ACCOUNT"], "shop_a")
+        self.assertEqual(suggestion.env["TK_BACKEND_API_METHOD"], "GET")
+        self.assertIn("csrf_token=%2A%2A%2A", suggestion.env["TK_BACKEND_API_URL"])
+        self.assertNotIn("secret", suggestion.to_dict()["env"]["TK_BACKEND_API_URL"])
+        self.assertIn("secret", suggestion.to_config().api_url)
+        self.assertEqual(suggestion.to_config().page_size, 20)
 
     def test_network_monitor_parse_methods(self):
         self.assertEqual(parse_methods("get, post "), ("GET", "POST"))

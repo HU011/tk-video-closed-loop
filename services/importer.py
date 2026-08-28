@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import sqlite3
 from typing import Any
@@ -58,6 +59,21 @@ def _video_url(row: dict[str, Any]) -> str:
     return raw
 
 
+def _creator_username(row: dict[str, Any], video_url: str, original_video_path: str) -> str:
+    raw = str(row.get("username") or row.get("creator_username") or "").strip()
+    if raw.startswith("@"):
+        raw = raw[1:]
+    if raw:
+        return raw
+    parsed = urlparse(video_url)
+    for part in parsed.path.split("/"):
+        if part.startswith("@") and len(part) > 1:
+            return part[1:]
+    seed = video_url or original_video_path or "unknown"
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:10]
+    return f"unknown_{digest}"
+
+
 def parse_csv_text(text: str) -> list[dict[str, Any]]:
     reader = csv.DictReader(io.StringIO(text.strip()))
     return [dict(row) for row in reader]
@@ -76,6 +92,8 @@ def import_video_rows(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> d
         if not video_url and not original_video_path:
             skipped += 1
             continue
+        if not str(row.get("username") or row.get("creator_username") or "").strip():
+            row["username"] = _creator_username(row, video_url, original_video_path)
         account_id = upsert_account(
             conn,
             name=account_name,

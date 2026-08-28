@@ -34,6 +34,7 @@
 - `data/app.db`
 - `uploads/` 中的真实素材
 - `outputs/` 中的生成结果
+- `runtime/` 中的 Chrome 登录会话和运行缓存
 - `__pycache__/`
 - `*.pyc`
 

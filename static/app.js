@@ -78,12 +78,19 @@ function renderDashboard() {
   ];
   $("metrics").innerHTML = metrics.map(([label, value]) => `<div class="metric"><span class="value">${fmt(value)}</span><span class="label">${label}</span></div>`).join("");
   const config = state.dashboard?.config || {};
+  const geminiFormat = config.gemini_request_format ? `/${config.gemini_request_format}` : "";
+  const geminiLabel = config.gemini_provider === "mock"
+    ? "Gemini mock"
+    : config.gemini_ready ? `Gemini ${config.gemini_provider}${geminiFormat}` : `Gemini ${config.gemini_provider || "未配置"}${geminiFormat}`;
+  const seedanceLabel = config.seedance_provider === "mock"
+    ? "Seedance mock"
+    : config.seedance_ready ? `Seedance ${config.seedance_provider}` : `Seedance ${config.seedance_provider || "未配置"}`;
   $("systemStatus").innerHTML = [
     config.ffmpeg_available ? ["FFmpeg", "ok"] : ["FFmpeg 未配置", "danger"],
     config.ffprobe_available ? ["FFprobe", "ok"] : ["FFprobe 未配置", "danger"],
     config.yt_dlp_available ? ["yt-dlp", "ok"] : ["yt-dlp 未配置", "warn"],
-    config.gemini_configured ? [`Gemini ${config.gemini_provider || ""}`, "ok"] : ["Gemini mock", "warn"],
-    [`Seedance ${config.seedance_provider || "mock"}`, config.seedance_provider === "mock" ? "warn" : "ok"],
+    [geminiLabel, config.gemini_ready ? "ok" : "warn"],
+    [seedanceLabel, config.seedance_ready ? "ok" : "warn"],
   ].map(([label, kind]) => `<span class="chip ${kind === "danger" ? "danger" : kind === "warn" ? "warn" : ""}">${label}</span>`).join("");
   $("hotList").innerHTML = (state.dashboard?.hot_videos || []).map(videoRow).join("") || empty("暂无爆款视频");
   $("candidateList").innerHTML = (state.dashboard?.sample_candidates || []).map(candidateRow).join("") || empty("暂无样品风险");
@@ -100,7 +107,7 @@ function renderModules() {
     moduleRow("采集模块", collection.ready, `来源：${(collection.sources || []).join(" / ")}`),
     moduleRow("下载模块", collection.download_capabilities?.yt_dlp_available, `yt-dlp：${collection.download_capabilities?.yt_dlp_bin || "yt-dlp"}`),
     moduleRow("筛选模块", screening.ready, `爆款阈值 ${screening.hot_video_threshold || 60}，样品风险阈值 ${screening.sample_candidate_threshold || 50}`),
-    moduleRow("复刻模块", replication.ready, `最长 ${replication.max_duration_seconds || 60}s，分段 ${replication.segment_seconds || 15}s`),
+    moduleRow("复刻模块", replication.ready, `最长 ${replication.max_duration_seconds || 60}s，分段 ${replication.segment_seconds || 15}s，Gemini ${replication.gemini_provider || "mock"}${replication.gemini_request_format ? `/${replication.gemini_request_format}` : ""}，Seedance ${replication.seedance_provider || "mock"}`),
   ].join("");
 }
 
