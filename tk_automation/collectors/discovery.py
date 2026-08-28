@@ -146,6 +146,10 @@ def suggest_backend_api(
 def _json_or_none(raw: str | None) -> Any | None:
     if raw is None or raw == "":
         return None
+    try:
+        return json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return None
 
 
 def _int_or_default(value: Any, default: int) -> int:
@@ -153,10 +157,6 @@ def _int_or_default(value: Any, default: int) -> int:
         return int(str(value).strip())
     except (TypeError, ValueError):
         return default
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        return None
 
 
 def _walk_keys(value: Any) -> list[str]:

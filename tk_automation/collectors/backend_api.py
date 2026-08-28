@@ -124,8 +124,10 @@ class BackendApiCompletedVideoCollector:
                 )
                 if self.config.stop_on_empty and not page_records:
                     break
+                if has_more is False:
+                    break
                 if self.config.cursor_param:
-                    if has_more is False or not next_cursor or next_cursor == cursor:
+                    if not next_cursor or next_cursor == cursor:
                         break
                     cursor = next_cursor
         finally:

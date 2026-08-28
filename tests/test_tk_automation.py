@@ -1,7 +1,15 @@
 import unittest
+from unittest.mock import patch
 
 from tk_automation.collectors.completed_video_links import CompletedVideoLinkCollector
-from tk_automation.collectors.backend_api import add_query_params, find_first_bool, find_first_value, render_template
+from tk_automation.collectors.backend_api import (
+    BackendApiCollectionConfig,
+    BackendApiCompletedVideoCollector,
+    add_query_params,
+    find_first_bool,
+    find_first_value,
+    render_template,
+)
 from tk_automation.collectors.discovery import suggest_backend_api
 from tk_automation.collectors.network_monitor import parse_methods, sanitize_headers, sanitize_post_data, sanitize_query
 from tk_automation.parsers.video_links import extract_video_urls_from_text, looks_like_video_url, normalize_video_url
@@ -91,6 +99,19 @@ class TKAutomationTests(unittest.TestCase):
         )
         self.assertEqual(records, [])
 
+    def test_api_data_rejects_incomplete_publish_statuses(self):
+        records = CompletedVideoLinkCollector().collect_api_data(
+            {
+                "list": [
+                    {"creator_username": "demo", "video_link": "https://www.tiktok.com/@demo/video/501", "publish_status": "publishing"},
+                    {"creator_username": "demo", "video_link": "https://www.tiktok.com/@demo/video/502", "publish_status": "unpublished"},
+                    {"creator_username": "demo", "video_link": "https://www.tiktok.com/@demo/video/503", "publish_status": "not_published"},
+                ]
+            },
+            account_name="shop_a",
+        )
+        self.assertEqual(records, [])
+
     def test_collect_text_derives_creator_from_tiktok_url(self):
         records = CompletedVideoLinkCollector().collect_text("https://www.tiktok.com/@demo_creator/video/600")
         self.assertEqual(records[0].username, "demo_creator")
@@ -145,6 +166,58 @@ class TKAutomationTests(unittest.TestCase):
         self.assertNotIn("secret", suggestion.to_dict()["env"]["TK_BACKEND_API_URL"])
         self.assertIn("secret", suggestion.to_config().api_url)
         self.assertEqual(suggestion.to_config().page_size, 20)
+
+    def test_discovery_suggests_post_body_template(self):
+        request = {
+            "url": "https://seller.tiktokshop.com/api/affiliate/video/list",
+            "method": "POST",
+            "postData": '{"page":1,"page_size":20,"status":"published","csrf_token":"secret"}',
+            "headers": {"content-type": "application/json"},
+        }
+        response = {"url": request["url"], "status": 200, "mimeType": "application/json"}
+        body = '{"data":{"list":[{"creator_username":"demo","video_link":"https://www.tiktok.com/@demo/video/701","publish_status":"published"}],"has_more":false}}'
+        suggestion = suggest_backend_api(request, response, body, record_count=1, account_name="shop_a")
+        self.assertIsNotNone(suggestion)
+        assert suggestion is not None
+        self.assertEqual(suggestion.to_config().body["page"], "{page}")
+        self.assertEqual(suggestion.to_config().body["page_size"], "{page_size}")
+        self.assertEqual(suggestion.env["TK_BACKEND_API_BODY"], '{"page": "{page}", "page_size": "{page_size}", "status": "published", "csrf_token": "***"}')
+
+    def test_backend_page_mode_stops_on_has_more_false(self):
+        class FakeClient:
+            def __init__(self):
+                self.calls = 0
+
+            def call(self, *_args, **_kwargs):
+                return {}
+
+            def evaluate(self, *_args, **_kwargs):
+                self.calls += 1
+                return {
+                    "ok": True,
+                    "status": 200,
+                    "url": f"https://seller.tiktokshop.com/api/videos?page={self.calls}",
+                    "data": {
+                        "list": [
+                            {
+                                "creator_username": "demo",
+                                "video_link": "https://www.tiktok.com/@demo/video/702",
+                                "publish_status": "published",
+                            }
+                        ],
+                        "has_more": False,
+                    },
+                }
+
+            def close(self):
+                return None
+
+        fake_client = FakeClient()
+        config = BackendApiCollectionConfig(api_url="https://seller.tiktokshop.com/api/videos", max_pages=5)
+        with patch("tk_automation.collectors.backend_api.CDPClient.connect_to_page", return_value=fake_client):
+            result = BackendApiCompletedVideoCollector(config).collect()
+        self.assertEqual(fake_client.calls, 1)
+        self.assertEqual(len(result.records), 1)
 
     def test_network_monitor_parse_methods(self):
         self.assertEqual(parse_methods("get, post "), ("GET", "POST"))

@@ -62,6 +62,7 @@ NEGATIVE_STATUS_MARKERS = (
     "draft",
     "pending",
     "processing",
+    "publishing",
     "review",
     "reject",
     "rejected",
@@ -72,6 +73,9 @@ NEGATIVE_STATUS_MARKERS = (
     "cancelled",
     "deleted",
     "expired",
+    "unpublish",
+    "not_published",
+    "not published",
     "草稿",
     "审核",
     "失败",
@@ -205,10 +209,7 @@ class CompletedVideoLinkCollector:
             return False
         if not status:
             return bool(self._first_video_url(row) or self._video_id_url(row))
-        return status in COMPLETED_VALUES or any(
-            marker in status
-            for marker in ("complete", "publish", "posted", "success", "finish", "已完成", "已发布", "发布成功")
-        )
+        return status in COMPLETED_VALUES or any(marker in status for marker in ("complete", "posted", "success", "finish", "已完成", "已发布", "发布成功"))
 
     def _first_video_url(self, row: dict[str, Any]) -> str:
         for field in VIDEO_URL_FIELDS:
