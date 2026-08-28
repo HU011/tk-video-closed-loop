@@ -238,7 +238,7 @@ class GeminiClient:
         else:
             tail_rule = "这是第一段，不需要衔接上一段尾帧。"
         return (
-            "请分析完整原视频的整体节奏、当前片段的动作和镜头，并结合产品图生成 Seedance 2.0 提示词。"
+            "请只基于当前上传的源视频片段分析节奏、动作和镜头，并结合产品图生成 Seedance 2.0 提示词。"
             f"现在要生成第 {segment_index}/{total_segments} 段，每段最长 15 秒。{tail_rule}"
             "只返回 JSON，字段必须是 prompt、shot_notes、warnings。"
             "prompt 要直接可用于 APIMart Seedance 2.0，重点写：镜头、动作、产品替换、构图、光线、节奏、首尾帧连续性。"

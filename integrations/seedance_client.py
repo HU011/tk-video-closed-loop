@@ -87,7 +87,7 @@ class SeedanceClient:
 
         video_urls = [public_project_url(source_segment_path)]
         if first_frame_path:
-            prompt_prefix = "参考图1是上一段视频返回的尾帧，必须作为当前段首帧；参考图2是要替换进画面的产品图。"
+            prompt_prefix = "参考图1是上一段视频返回的尾帧，请让当前段开场构图、主体位置、产品位置和动作方向与其连续；参考图2是要替换进画面的产品图。"
         else:
             prompt_prefix = "参考图1是要替换进画面的产品图。"
         body = {

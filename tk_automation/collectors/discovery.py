@@ -109,23 +109,25 @@ def suggest_backend_api(
         return None
 
     query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query, keep_blank_values=True))
+    raw_headers = request.get("headers") or {}
     post_data = str(request.get("postData") or "")
-    parsed_body = _json_or_none(post_data)
+    content_type = _header_value(raw_headers, "content-type")
+    parsed_body, body_format = _parse_request_body(post_data, content_type)
     page_param = _first_existing_key(query, PAGE_KEYS) or _first_existing_key(parsed_body, PAGE_KEYS) or "page"
     page_size_param = _first_existing_key(query, PAGE_SIZE_KEYS) or _first_existing_key(parsed_body, PAGE_SIZE_KEYS) or "page_size"
     cursor_param = _first_existing_key(query, CURSOR_KEYS) or _first_existing_key(parsed_body, CURSOR_KEYS) or ""
     api_url = _request_url_without_pagination(url, method, page_param, page_size_param, cursor_param, sanitize=False)
     safe_api_url = _request_url_without_pagination(url, method, page_param, page_size_param, cursor_param, sanitize=True)
-    headers = _replay_headers(request.get("headers") or {})
-    body_template = _body_template(parsed_body, page_param, page_size_param, cursor_param, sanitize=False) if method != "GET" else ""
-    safe_body_template = _body_template(parsed_body, page_param, page_size_param, cursor_param, sanitize=True) if method != "GET" else ""
+    headers = _replay_headers(raw_headers)
+    body_template = _request_body_template(parsed_body, body_format, page_param, page_size_param, cursor_param, sanitize=False) if method != "GET" else ""
+    safe_body_template = _request_body_template(parsed_body, body_format, page_param, page_size_param, cursor_param, sanitize=True) if method != "GET" else ""
     page_size = _first_existing_value(query, PAGE_SIZE_KEYS) or _first_existing_value(parsed_body, PAGE_SIZE_KEYS) or "50"
 
     env = {
         "TK_BACKEND_API_URL": safe_api_url,
         "TK_BACKEND_API_METHOD": method,
         "TK_BACKEND_API_HEADERS": json.dumps(headers, ensure_ascii=False),
-        "TK_BACKEND_API_BODY": json.dumps(safe_body_template, ensure_ascii=False) if safe_body_template != "" else "",
+        "TK_BACKEND_API_BODY": _serialize_body_env(safe_body_template),
         "TK_BACKEND_ACCOUNT": account_name or "tk_completed",
         "TK_BACKEND_PAGE_SIZE": str(page_size),
         "TK_BACKEND_PAGE_PARAM": page_param,
@@ -138,7 +140,7 @@ def suggest_backend_api(
     runtime_env = {
         **env,
         "TK_BACKEND_API_URL": api_url,
-        "TK_BACKEND_API_BODY": json.dumps(body_template, ensure_ascii=False) if body_template != "" else "",
+        "TK_BACKEND_API_BODY": _serialize_body_env(body_template),
     }
     return DiscoveredBackendApi(score=score, reasons=reasons, env=env, runtime_env=runtime_env)
 
@@ -150,6 +152,24 @@ def _json_or_none(raw: str | None) -> Any | None:
         return json.loads(raw)
     except (TypeError, json.JSONDecodeError):
         return None
+
+
+def _parse_request_body(raw: str, content_type: str) -> tuple[Any | None, str]:
+    parsed_json = _json_or_none(raw)
+    if parsed_json is not None:
+        return parsed_json, "json"
+    if _looks_like_form_body(raw, content_type):
+        parsed_form = dict(urllib.parse.parse_qsl(raw, keep_blank_values=True))
+        if parsed_form:
+            return parsed_form, "form"
+    if raw:
+        return raw, "raw"
+    return None, "none"
+
+
+def _looks_like_form_body(raw: str, content_type: str) -> bool:
+    lowered = content_type.lower()
+    return "application/x-www-form-urlencoded" in lowered or ("=" in raw and "&" in raw)
 
 
 def _int_or_default(value: Any, default: int) -> int:
@@ -223,6 +243,45 @@ def _replay_headers(headers: dict[str, Any]) -> dict[str, str]:
             continue
         result[name] = str(value)
     return result
+
+
+def _header_value(headers: dict[str, Any], wanted: str) -> str:
+    wanted_lower = wanted.lower()
+    for key, value in headers.items():
+        if str(key).lower() == wanted_lower:
+            return str(value)
+    return ""
+
+
+def _request_body_template(
+    value: Any,
+    body_format: str,
+    page_param: str,
+    page_size_param: str,
+    cursor_param: str,
+    sanitize: bool,
+) -> Any:
+    templated = _body_template(value, page_param, page_size_param, cursor_param, sanitize)
+    if body_format == "form" and isinstance(templated, dict):
+        return _urlencode_template({str(key): str(item) for key, item in templated.items()})
+    return templated
+
+
+def _serialize_body_env(value: Any) -> str:
+    if value in ("", None):
+        return ""
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _urlencode_template(values: dict[str, str]) -> str:
+    encoded = urllib.parse.urlencode(values)
+    return (
+        encoded.replace("%7Bpage%7D", "{page}")
+        .replace("%7Bpage_size%7D", "{page_size}")
+        .replace("%7Bcursor%7D", "{cursor}")
+    )
 
 
 def _body_template(value: Any, page_param: str, page_size_param: str, cursor_param: str, sanitize: bool) -> Any:

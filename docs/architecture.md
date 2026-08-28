@@ -11,7 +11,7 @@
 - `services/importer.py`：CSV/JSON 视频数据导入。
 - `services/analyzer.py`：爆款评分、白嫖样品达人评分。
 - `services/replicator.py`：复刻任务编排和后台执行。
-- `media/ffmpeg_tools.py`：探测时长、切分、抽尾帧、拼接、mock 视频。
+- `media/ffmpeg_tools.py`：探测时长、切分并转为 720x1280 参考片段、抽尾帧、拼接、mock 视频。
 - `integrations/apimart_client.py`：APIMart JSON 请求、图片上传、结果下载。
 - `integrations/gemini_client.py`：APIMart Gemini 原生多模态 `generateContent` 生成分段提示词；可兼容旧 Chat Completions。
 - `integrations/seedance_client.py`：APIMart Seedance 任务提交、轮询、视频和尾帧下载；默认 mock。

@@ -69,6 +69,9 @@ class GeminiClientTests(unittest.TestCase):
         self.assertEqual(len(video_parts), 1)
         self.assertEqual(len(image_parts), 2)
         self.assertEqual(body["generationConfig"]["responseMimeType"], "application/json")
+        first_text = parts[0]["text"]
+        self.assertIn("只基于当前上传的源视频片段", first_text)
+        self.assertNotIn("分析完整原视频", first_text)
 
 
 if __name__ == "__main__":

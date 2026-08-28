@@ -183,6 +183,33 @@ class TKAutomationTests(unittest.TestCase):
         self.assertEqual(suggestion.to_config().body["page_size"], "{page_size}")
         self.assertEqual(suggestion.env["TK_BACKEND_API_BODY"], '{"page": "{page}", "page_size": "{page_size}", "status": "published", "csrf_token": "***"}')
 
+    def test_discovery_suggests_form_post_body_template(self):
+        request = {
+            "url": "https://seller.tiktokshop.com/api/affiliate/video/list",
+            "method": "POST",
+            "postData": "page=1&page_size=20&status=published&csrf_token=secret",
+            "headers": {"content-type": "application/x-www-form-urlencoded"},
+        }
+        response = {"url": request["url"], "status": 200, "mimeType": "application/json"}
+        body = '{"data":{"list":[{"creator_username":"demo","video_link":"https://www.tiktok.com/@demo/video/703","publish_status":"published"}],"has_more":false}}'
+        suggestion = suggest_backend_api(request, response, body, record_count=1, account_name="shop_a")
+        self.assertIsNotNone(suggestion)
+        assert suggestion is not None
+        self.assertEqual(suggestion.to_config().body, "page={page}&page_size={page_size}&status=published&csrf_token=secret")
+        self.assertEqual(suggestion.env["TK_BACKEND_API_BODY"], "page={page}&page_size={page_size}&status=published&csrf_token=%2A%2A%2A")
+        self.assertEqual(suggestion.to_config().page_size, 20)
+
+    def test_backend_form_body_uses_urlencoded_payload(self):
+        config = BackendApiCollectionConfig(
+            api_url="https://seller.tiktokshop.com/api/videos",
+            method="POST",
+            headers={"content-type": "application/x-www-form-urlencoded"},
+            body={"page": "{page}", "page_size": "{page_size}", "status": "published"},
+            page_size=20,
+        )
+        body = BackendApiCompletedVideoCollector(config)._request_body(page=3, cursor="")
+        self.assertEqual(body, "page=3&page_size=20&status=published")
+
     def test_backend_page_mode_stops_on_has_more_false(self):
         class FakeClient:
             def __init__(self):

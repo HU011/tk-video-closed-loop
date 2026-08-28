@@ -186,9 +186,17 @@ class BackendApiCompletedVideoCollector:
                 body[self.config.page_size_param] = self.config.page_size
             if self.config.cursor_param and cursor and self.config.cursor_param not in body:
                 body[self.config.cursor_param] = cursor
+            if self._uses_form_body():
+                return urlencode({str(key): str(value) for key, value in body.items()})
         if isinstance(body, (dict, list)):
             return json.dumps(body, ensure_ascii=False)
         return str(body)
+
+    def _uses_form_body(self) -> bool:
+        for key, value in self.config.headers.items():
+            if str(key).lower() == "content-type" and "application/x-www-form-urlencoded" in str(value).lower():
+                return True
+        return False
 
 
 def build_fetch_expression(request: dict[str, Any]) -> str:

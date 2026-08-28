@@ -14,6 +14,12 @@ class FFmpegError(RuntimeError):
     pass
 
 
+SEEDANCE_REFERENCE_VIDEO_FILTER = (
+    "scale=720:1280:force_original_aspect_ratio=decrease,"
+    "pad=720:1280:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p"
+)
+
+
 def _run(args: list[str]) -> None:
     proc = subprocess.run(args, capture_output=True, text=True)
     if proc.returncode != 0:
@@ -69,6 +75,8 @@ def split_video(source: str | Path, output_dir: str | Path, max_duration: int = 
                 f"{length:.3f}",
                 "-c:v",
                 "libx264",
+                "-vf",
+                SEEDANCE_REFERENCE_VIDEO_FILTER,
                 "-preset",
                 "veryfast",
                 "-crf",
@@ -203,4 +211,3 @@ def make_mock_video(product_image: str | Path, output_path: str | Path, duration
             ]
         )
     return out
-

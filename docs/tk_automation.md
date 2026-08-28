@@ -128,7 +128,7 @@ runtime/chrome_profile
 - `url`：已完成视频列表接口地址。
 - `method`：GET 或 POST。
 - `headers`：必要请求头，敏感值不要写进仓库。
-- `query` / `post_data`：分页参数、筛选条件、达人/商品/任务状态参数。
+- `query` / `post_data`：分页参数、筛选条件、达人/商品/任务状态参数；如果是 POST，还要确认 body 是 JSON 还是 `application/x-www-form-urlencoded`。
 - 返回结构：视频链接字段、播放/点赞/订单等指标字段。
 - 翻页结束：空列表、`has_more=false`、`has_next=false`、没有 `next_cursor` 或下一页游标不再变化。
 
@@ -187,6 +187,12 @@ POST 接口示例：
 
 ```powershell
 .\venv\Scripts\python.exe scripts\tk_collect_completed_videos.py collect-api --method POST --api-url "/your/completed/video/list/api" --body "{""page"":""{page}"",""page_size"":""{page_size}""}" --import-db
+```
+
+表单 POST 接口示例：
+
+```powershell
+.\venv\Scripts\python.exe scripts\tk_collect_completed_videos.py collect-api --method POST --api-url "/your/completed/video/list/api" --headers "{""content-type"":""application/x-www-form-urlencoded""}" --body "page={page}&page_size={page_size}&status=published" --import-db
 ```
 
 主动请求会在 TK 后台页面上下文中执行 `fetch`，因此会复用当前 Chrome 的登录态，不需要把 Cookie 写到 `.env`。

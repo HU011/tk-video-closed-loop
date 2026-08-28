@@ -242,7 +242,7 @@ YTDLP_BIN=yt-dlp
 .\venv\Scripts\python.exe scripts\tk_collect_completed_videos.py collect-api --api-url "/your/completed/video/list/api" --account shop_account_a --max-pages 10 --import-db
 ```
 
-主动请求支持 `page/page_size` 翻页，也支持 `cursor/next_cursor/has_more` 这类游标分页。
+主动请求支持 `page/page_size` 翻页，也支持 `cursor/next_cursor/has_more` 这类游标分页。POST 请求会根据 `content-type` 保持 JSON 或 `application/x-www-form-urlencoded` 表单 body。
 
 更多说明见 `docs/tk_automation.md`。
 
@@ -271,9 +271,9 @@ uploads/video/demo.mp4
 ## 复刻生成逻辑
 
 1. 原视频最多处理 60 秒。
-2. 使用 FFmpeg 切成最多 4 段，每段不超过 15 秒。
+2. 使用 FFmpeg 切成最多 4 段，每段不超过 15 秒，并转为 720x1280 的 9:16 H.264 参考片段。
 3. Gemini 每次只分析当前 15 秒源片段、产品图和可选的上一段尾帧图，不把完整 1 分钟原片作为参考视频上传给模型。
-4. 第 2-4 段使用当前片段、产品图和上一段 Seedance 返回尾帧继续生成。
+4. 第 2-4 段使用当前片段、产品图和上一段 Seedance 返回尾帧作为连续性参考继续生成。
 5. Seedance 请求固定带 `return_last_frame=true`。
 6. 优先使用接口返回的尾帧 URL；如果接口未返回尾帧，才本地抽帧兜底。
 7. 所有片段生成完成后拼接为最终视频。
