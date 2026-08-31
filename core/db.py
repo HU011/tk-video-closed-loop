@@ -178,15 +178,21 @@ def init_db() -> None:
             );
             """
         )
+        conn.executescript(
+            """
+            DROP INDEX IF EXISTS idx_videos_platform_video_url_unique;
+            DROP INDEX IF EXISTS idx_videos_platform_original_video_path_unique;
+            """
+        )
         _dedupe_existing_videos(conn)
         conn.executescript(
             """
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_videos_platform_video_url_unique
-            ON videos(platform, video_url)
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_videos_account_video_url_unique
+            ON videos(platform, COALESCE(account_id, 0), video_url)
             WHERE video_url IS NOT NULL AND video_url != '';
 
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_videos_platform_original_video_path_unique
-            ON videos(platform, original_video_path)
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_videos_account_original_video_path_unique
+            ON videos(platform, COALESCE(account_id, 0), original_video_path)
             WHERE original_video_path IS NOT NULL AND original_video_path != '';
             """
         )
@@ -206,10 +212,10 @@ def _dedupe_existing_videos_by(conn: sqlite3.Connection, column: str) -> int:
     changed = 0
     groups = conn.execute(
         f"""
-        SELECT platform, {column}, MIN(id) AS keeper_id
+        SELECT platform, COALESCE(account_id, 0) AS account_key, {column}, MIN(id) AS keeper_id
         FROM videos
         WHERE {column} IS NOT NULL AND {column} != ''
-        GROUP BY platform, {column}
+        GROUP BY platform, COALESCE(account_id, 0), {column}
         HAVING COUNT(*) > 1
         """
     ).fetchall()
@@ -218,10 +224,10 @@ def _dedupe_existing_videos_by(conn: sqlite3.Connection, column: str) -> int:
             f"""
             SELECT id
             FROM videos
-            WHERE platform=? AND {column}=? AND id != ?
+            WHERE platform=? AND COALESCE(account_id, 0)=? AND {column}=? AND id != ?
             ORDER BY id
             """,
-            (group["platform"], group[column], group["keeper_id"]),
+            (group["platform"], group["account_key"], group[column], group["keeper_id"]),
         ).fetchall()
         for duplicate in duplicate_ids:
             _merge_duplicate_video(conn, int(group["keeper_id"]), int(duplicate["id"]))

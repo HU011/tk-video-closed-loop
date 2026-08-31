@@ -128,6 +128,43 @@ class ImporterTests(unittest.TestCase):
         self.assertEqual(result["imported"], 1)
         self.assertEqual(creator["username"], "derived_user")
 
+    def test_same_video_url_is_kept_per_account(self):
+        first = import_video_rows(
+            self.conn,
+            [
+                {
+                    "account_name": "shop_a",
+                    "username": "demo",
+                    "video_url": "https://www.tiktok.com/@demo/video/250",
+                    "views": "100",
+                }
+            ],
+        )
+        second = import_video_rows(
+            self.conn,
+            [
+                {
+                    "account_name": "shop_b",
+                    "username": "demo",
+                    "video_url": "https://www.tiktok.com/@demo/video/250",
+                    "views": "200",
+                }
+            ],
+        )
+        rows = self.conn.execute(
+            """
+            SELECT a.name AS account_name, v.video_url, v.views
+            FROM videos v
+            JOIN accounts a ON a.id = v.account_id
+            ORDER BY a.name
+            """
+        ).fetchall()
+        self.assertEqual(first["imported"], 1)
+        self.assertEqual(second["imported"], 1)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual([row["account_name"] for row in rows], ["shop_a", "shop_b"])
+        self.assertEqual([row["views"] for row in rows], [100, 200])
+
     def test_unique_video_url_conflict_falls_back_to_update(self):
         import_video_rows(
             self.conn,
@@ -142,7 +179,11 @@ class ImporterTests(unittest.TestCase):
             ],
         )
         self.conn.execute(
-            "CREATE UNIQUE INDEX unique_test_videos_url ON videos(platform, video_url) WHERE video_url != ''"
+            """
+            CREATE UNIQUE INDEX unique_test_videos_url
+            ON videos(platform, COALESCE(account_id, 0), video_url)
+            WHERE video_url != ''
+            """
         )
         with patch("services.importer._find_existing_video", side_effect=[None, 1]):
             result = import_video_rows(

@@ -124,7 +124,7 @@ def import_video_rows(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> d
             "created_at": now,
             "updated_at": now,
         }
-        existing_id = _find_existing_video(conn, platform, video_url, original_video_path)
+        existing_id = _find_existing_video(conn, platform, account_id, video_url, original_video_path)
         if existing_id:
             _update_video(conn, existing_id, values)
             updated += 1
@@ -133,7 +133,7 @@ def import_video_rows(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> d
                 _insert_video(conn, values)
                 imported += 1
             except sqlite3.IntegrityError:
-                existing_id = _find_existing_video(conn, platform, video_url, original_video_path)
+                existing_id = _find_existing_video(conn, platform, account_id, video_url, original_video_path)
                 if not existing_id:
                     raise
                 _update_video(conn, existing_id, values)
@@ -141,18 +141,24 @@ def import_video_rows(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> d
     return {"imported": imported, "updated": updated, "skipped": skipped}
 
 
-def _find_existing_video(conn: sqlite3.Connection, platform: str, video_url: str, original_video_path: str) -> int | None:
+def _find_existing_video(
+    conn: sqlite3.Connection,
+    platform: str,
+    account_id: int | None,
+    video_url: str,
+    original_video_path: str,
+) -> int | None:
     if video_url:
         row = conn.execute(
-            "SELECT id FROM videos WHERE platform=? AND video_url=? LIMIT 1",
-            (platform, video_url),
+            "SELECT id FROM videos WHERE platform=? AND COALESCE(account_id, 0)=COALESCE(?, 0) AND video_url=? LIMIT 1",
+            (platform, account_id, video_url),
         ).fetchone()
         if row:
             return int(row[0])
     if original_video_path:
         row = conn.execute(
-            "SELECT id FROM videos WHERE platform=? AND original_video_path=? LIMIT 1",
-            (platform, original_video_path),
+            "SELECT id FROM videos WHERE platform=? AND COALESCE(account_id, 0)=COALESCE(?, 0) AND original_video_path=? LIMIT 1",
+            (platform, account_id, original_video_path),
         ).fetchone()
         if row:
             return int(row[0])
