@@ -231,7 +231,7 @@ YTDLP_BIN=yt-dlp
 监听结果会输出 `suggestions`，其中包含已脱敏的候选接口配置、分页字段和可复制的采集命令。也可以直接使用自动发现并采集：
 
 ```powershell
-.\venv\Scripts\python.exe scripts\tk_collect_completed_videos.py collect-auto --request-url-contains video --listen-timeout 120 --max-pages 10 --import-db
+.\venv\Scripts\python.exe scripts\tk_collect_completed_videos.py collect-auto --request-url-contains video --account shop_account_a --listen-timeout 120 --max-pages 10 --import-db
 ```
 
 `collect-auto` 会先监听当前已登录 Chrome 的 Network 响应，从候选接口里选最高分接口，再复用同一个浏览器页面上下文继续分页请求。输出里的 `cookie`、`authorization`、`csrf/token/session` 等字段会脱敏，真实请求只在当前进程内使用浏览器登录态。
@@ -247,6 +247,14 @@ YTDLP_BIN=yt-dlp
 更多说明见 `docs/tk_automation.md`。
 
 TK 后台采集不会要求在项目里输入 TK 账号密码，也不会把 Cookie 写入仓库。你在独立 Chrome 里正常登录后，主动请求会由浏览器自动携带 Cookie/session、User-Agent、Origin、Referer 等浏览器环境信息；接口路径、请求方法、业务参数、分页字段和必要的自定义请求头需要通过监听请求确认后配置。监听输出会脱敏 `cookie`、`authorization`、`x-csrf-token` 等敏感请求头。
+
+## 多账号去重规则
+
+入库时会按账号维度保存采集结果：
+
+- 同一账号内，`video_url` 或 `original_video_path` 重复时会更新已有视频记录，避免重复入库。
+- 不同账号采集到同一个 `video_url` 或同一个 `original_video_path` 时，会保留为不同账号下的独立视频记录，不会互相合并或覆盖。
+- 多账号采集时建议每次都显式传入 `--account`，例如 `--account shop_account_a`、`--account shop_account_b`。如果不传，数据会落到默认账号，同一视频会被当成同账号重复数据处理。
 
 ## CSV 字段
 
