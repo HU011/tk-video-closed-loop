@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import patch
 
@@ -166,6 +167,38 @@ class TKAutomationTests(unittest.TestCase):
         self.assertNotIn("secret", suggestion.to_dict()["env"]["TK_BACKEND_API_URL"])
         self.assertIn("secret", suggestion.to_config().api_url)
         self.assertEqual(suggestion.to_config().page_size, 20)
+
+    def test_discovery_keeps_sensitive_custom_headers_only_in_runtime_config(self):
+        request = {
+            "url": "https://seller.tiktokshop.com/api/affiliate/video/list?page=1&page_size=20",
+            "method": "POST",
+            "headers": {
+                "accept": "application/json",
+                "content-type": "application/json",
+                "cookie": "sid=secret",
+                "x-csrf-token": "secret-token",
+                "x-business-context": "seller-center",
+                "sec-fetch-site": "same-origin",
+            },
+            "postData": '{"page":1,"page_size":20}',
+        }
+        response = {"url": request["url"], "status": 200, "mimeType": "application/json"}
+        body = '{"data":{"list":[{"creator_username":"demo","video_link":"https://www.tiktok.com/@demo/video/704","publish_status":"published"}]}}'
+        suggestion = suggest_backend_api(request, response, body, record_count=1, account_name="shop_a")
+        self.assertIsNotNone(suggestion)
+        assert suggestion is not None
+
+        safe_headers = json.loads(suggestion.env["TK_BACKEND_API_HEADERS"])
+        self.assertEqual(safe_headers["x-csrf-token"], "***")
+        self.assertEqual(safe_headers["x-business-context"], "seller-center")
+        self.assertNotIn("cookie", {key.lower(): value for key, value in safe_headers.items()})
+        self.assertNotIn("sec-fetch-site", {key.lower(): value for key, value in safe_headers.items()})
+        self.assertNotIn("secret-token", json.dumps(suggestion.to_dict(), ensure_ascii=False))
+
+        runtime_headers = suggestion.to_config().headers
+        self.assertEqual(runtime_headers["x-csrf-token"], "secret-token")
+        self.assertEqual(runtime_headers["x-business-context"], "seller-center")
+        self.assertNotIn("cookie", {key.lower(): value for key, value in runtime_headers.items()})
 
     def test_discovery_suggests_post_body_template(self):
         request = {

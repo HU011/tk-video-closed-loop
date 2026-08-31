@@ -22,7 +22,10 @@ def project_path(*parts: str) -> Path:
 
 
 def ensure_under_root(path: str | Path) -> Path:
-    resolved = Path(path).resolve()
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        candidate = ROOT_DIR / candidate
+    resolved = candidate.resolve()
     try:
         resolved.relative_to(ROOT_DIR)
     except ValueError as exc:
@@ -38,4 +41,3 @@ def public_file_path(relative_path: str) -> Path:
 def relpath(path: str | Path) -> str:
     resolved = ensure_under_root(path)
     return resolved.relative_to(ROOT_DIR).as_posix()
-

@@ -6,7 +6,7 @@ from typing import Any
 
 from collection.tiktok_oembed import TikTokOEmbedClient, row_from_oembed
 from core.db import db
-from core.paths import ROOT_DIR, UPLOADS_DIR, ensure_under_root
+from core.paths import UPLOADS_DIR, ensure_under_root
 from downloading.video_downloader import VideoDownloader
 from services.analyzer import recalculate_all
 from services.importer import import_video_rows, parse_csv_text
@@ -85,8 +85,6 @@ class CollectionService:
                 rows.extend(dict(item) for item in parsed["rows"] if isinstance(item, dict))
         if payload.get("file_path"):
             source = ensure_under_root(Path(str(payload["file_path"])))
-            if not source.is_absolute():
-                source = ensure_under_root(ROOT_DIR / source)
             text = source.read_text(encoding="utf-8")
             if source.suffix.lower() == ".csv":
                 rows.extend(parse_csv_text(text))

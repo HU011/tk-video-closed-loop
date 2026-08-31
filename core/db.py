@@ -178,6 +178,109 @@ def init_db() -> None:
             );
             """
         )
+        _dedupe_existing_videos(conn)
+        conn.executescript(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_videos_platform_video_url_unique
+            ON videos(platform, video_url)
+            WHERE video_url IS NOT NULL AND video_url != '';
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_videos_platform_original_video_path_unique
+            ON videos(platform, original_video_path)
+            WHERE original_video_path IS NOT NULL AND original_video_path != '';
+            """
+        )
+
+
+def _dedupe_existing_videos(conn: sqlite3.Connection) -> None:
+    while True:
+        changed = _dedupe_existing_videos_by(conn, "video_url")
+        changed += _dedupe_existing_videos_by(conn, "original_video_path")
+        if not changed:
+            break
+
+
+def _dedupe_existing_videos_by(conn: sqlite3.Connection, column: str) -> int:
+    if column not in {"video_url", "original_video_path"}:
+        raise ValueError(f"unsupported video dedupe column: {column}")
+    changed = 0
+    groups = conn.execute(
+        f"""
+        SELECT platform, {column}, MIN(id) AS keeper_id
+        FROM videos
+        WHERE {column} IS NOT NULL AND {column} != ''
+        GROUP BY platform, {column}
+        HAVING COUNT(*) > 1
+        """
+    ).fetchall()
+    for group in groups:
+        duplicate_ids = conn.execute(
+            f"""
+            SELECT id
+            FROM videos
+            WHERE platform=? AND {column}=? AND id != ?
+            ORDER BY id
+            """,
+            (group["platform"], group[column], group["keeper_id"]),
+        ).fetchall()
+        for duplicate in duplicate_ids:
+            _merge_duplicate_video(conn, int(group["keeper_id"]), int(duplicate["id"]))
+            changed += 1
+    return changed
+
+
+def _merge_duplicate_video(conn: sqlite3.Connection, keeper_id: int, duplicate_id: int) -> None:
+    duplicate = conn.execute("SELECT * FROM videos WHERE id=?", (duplicate_id,)).fetchone()
+    if not duplicate:
+        return
+    conn.execute(
+        """
+        UPDATE videos
+        SET
+            account_id=COALESCE(account_id, ?),
+            product_id=COALESCE(product_id, ?),
+            video_url=COALESCE(NULLIF(video_url, ''), ?),
+            original_video_path=COALESCE(NULLIF(original_video_path, ''), ?),
+            cover_path=COALESCE(NULLIF(cover_path, ''), ?),
+            title=COALESCE(NULLIF(title, ''), ?),
+            duration_seconds=MAX(duration_seconds, ?),
+            views=MAX(views, ?),
+            likes=MAX(likes, ?),
+            comments=MAX(comments, ?),
+            shares=MAX(shares, ?),
+            orders=MAX(orders, ?),
+            gmv=MAX(gmv, ?),
+            commission_rate=MAX(commission_rate, ?),
+            hot_score=MAX(hot_score, ?),
+            hot_reason=COALESCE(NULLIF(hot_reason, ''), ?),
+            collected_at=COALESCE(NULLIF(collected_at, ''), ?),
+            updated_at=?
+        WHERE id=?
+        """,
+        (
+            duplicate["account_id"],
+            duplicate["product_id"],
+            duplicate["video_url"],
+            duplicate["original_video_path"],
+            duplicate["cover_path"],
+            duplicate["title"],
+            duplicate["duration_seconds"],
+            duplicate["views"],
+            duplicate["likes"],
+            duplicate["comments"],
+            duplicate["shares"],
+            duplicate["orders"],
+            duplicate["gmv"],
+            duplicate["commission_rate"],
+            duplicate["hot_score"],
+            duplicate["hot_reason"],
+            duplicate["collected_at"],
+            utc_now(),
+            keeper_id,
+        ),
+    )
+    conn.execute("UPDATE replication_jobs SET video_id=? WHERE video_id=?", (keeper_id, duplicate_id))
+    conn.execute("DELETE FROM videos WHERE id=?", (duplicate_id,))
 
 
 def row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:

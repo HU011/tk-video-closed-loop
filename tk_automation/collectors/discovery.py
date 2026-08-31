@@ -15,6 +15,32 @@ HAS_MORE_KEYS = ("has_more", "hasMore", "has_next", "hasNext", "more", "is_more"
 NEXT_CURSOR_KEYS = ("next_cursor", "nextCursor", "next_page_token", "nextPageToken", "page_token", "pageToken")
 SENSITIVE_NAMES = ("token", "auth", "cookie", "csrf", "secret", "password", "session")
 BUSINESS_URL_MARKERS = ("video", "content", "creator", "affiliate", "product", "item", "publish", "performance")
+SAFE_REPLAY_HEADERS = {"accept", "content-type", "x-requested-with"}
+REPLAY_HEADER_NAMES = SAFE_REPLAY_HEADERS | {"authorization"}
+FORBIDDEN_REPLAY_HEADERS = {
+    "accept-charset",
+    "accept-encoding",
+    "access-control-request-headers",
+    "access-control-request-method",
+    "connection",
+    "content-length",
+    "cookie",
+    "cookie2",
+    "date",
+    "dnt",
+    "expect",
+    "host",
+    "keep-alive",
+    "origin",
+    "referer",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "user-agent",
+    "via",
+}
+FORBIDDEN_REPLAY_PREFIXES = ("proxy-", "sec-")
 VIDEO_DATA_KEYS = {
     "video_url",
     "video_link",
@@ -118,7 +144,8 @@ def suggest_backend_api(
     cursor_param = _first_existing_key(query, CURSOR_KEYS) or _first_existing_key(parsed_body, CURSOR_KEYS) or ""
     api_url = _request_url_without_pagination(url, method, page_param, page_size_param, cursor_param, sanitize=False)
     safe_api_url = _request_url_without_pagination(url, method, page_param, page_size_param, cursor_param, sanitize=True)
-    headers = _replay_headers(raw_headers)
+    headers = _replay_headers(raw_headers, sanitize=True)
+    runtime_headers = _replay_headers(raw_headers, sanitize=False)
     body_template = _request_body_template(parsed_body, body_format, page_param, page_size_param, cursor_param, sanitize=False) if method != "GET" else ""
     safe_body_template = _request_body_template(parsed_body, body_format, page_param, page_size_param, cursor_param, sanitize=True) if method != "GET" else ""
     page_size = _first_existing_value(query, PAGE_SIZE_KEYS) or _first_existing_value(parsed_body, PAGE_SIZE_KEYS) or "50"
@@ -140,6 +167,7 @@ def suggest_backend_api(
     runtime_env = {
         **env,
         "TK_BACKEND_API_URL": api_url,
+        "TK_BACKEND_API_HEADERS": json.dumps(runtime_headers, ensure_ascii=False),
         "TK_BACKEND_API_BODY": _serialize_body_env(body_template),
     }
     return DiscoveredBackendApi(score=score, reasons=reasons, env=env, runtime_env=runtime_env)
@@ -233,16 +261,21 @@ def _request_url_without_pagination(
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, urllib.parse.urlencode(clean_query), parts.fragment))
 
 
-def _replay_headers(headers: dict[str, Any]) -> dict[str, str]:
+def _replay_headers(headers: dict[str, Any], sanitize: bool = False) -> dict[str, str]:
     result: dict[str, str] = {}
-    browser_headers = {"accept", "content-type", "x-requested-with"}
     for key, value in headers.items():
         name = str(key)
         lowered = name.lower()
-        if lowered not in browser_headers or _is_sensitive_name(lowered):
+        if _is_forbidden_replay_header(lowered):
             continue
-        result[name] = str(value)
+        if lowered not in REPLAY_HEADER_NAMES and not lowered.startswith("x-"):
+            continue
+        result[name] = "***" if sanitize and _is_sensitive_name(lowered) else str(value)
     return result
+
+
+def _is_forbidden_replay_header(name: str) -> bool:
+    return name in FORBIDDEN_REPLAY_HEADERS or any(name.startswith(prefix) for prefix in FORBIDDEN_REPLAY_PREFIXES)
 
 
 def _header_value(headers: dict[str, Any], wanted: str) -> str:

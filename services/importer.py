@@ -129,8 +129,15 @@ def import_video_rows(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> d
             _update_video(conn, existing_id, values)
             updated += 1
         else:
-            _insert_video(conn, values)
-            imported += 1
+            try:
+                _insert_video(conn, values)
+                imported += 1
+            except sqlite3.IntegrityError:
+                existing_id = _find_existing_video(conn, platform, video_url, original_video_path)
+                if not existing_id:
+                    raise
+                _update_video(conn, existing_id, values)
+                updated += 1
     return {"imported": imported, "updated": updated, "skipped": skipped}
 
 

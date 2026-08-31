@@ -1,5 +1,6 @@
 import sqlite3
 import unittest
+from unittest.mock import patch
 
 from services.importer import import_video_rows
 
@@ -126,6 +127,41 @@ class ImporterTests(unittest.TestCase):
         creator = self.conn.execute("SELECT username FROM creators").fetchone()
         self.assertEqual(result["imported"], 1)
         self.assertEqual(creator["username"], "derived_user")
+
+    def test_unique_video_url_conflict_falls_back_to_update(self):
+        import_video_rows(
+            self.conn,
+            [
+                {
+                    "account_name": "shop_a",
+                    "username": "demo",
+                    "video_url": "https://www.tiktok.com/@demo/video/300",
+                    "title": "old",
+                    "views": "100",
+                }
+            ],
+        )
+        self.conn.execute(
+            "CREATE UNIQUE INDEX unique_test_videos_url ON videos(platform, video_url) WHERE video_url != ''"
+        )
+        with patch("services.importer._find_existing_video", side_effect=[None, 1]):
+            result = import_video_rows(
+                self.conn,
+                [
+                    {
+                        "account_name": "shop_a",
+                        "username": "demo",
+                        "video_url": "https://www.tiktok.com/@demo/video/300",
+                        "title": "new",
+                        "play_count": "500",
+                    }
+                ],
+            )
+        rows = self.conn.execute("SELECT title, views FROM videos").fetchall()
+        self.assertEqual(result["updated"], 1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["title"], "new")
+        self.assertEqual(rows[0]["views"], 500)
 
 
 if __name__ == "__main__":
